@@ -94,15 +94,18 @@ pub fn extract_game_data(
             }
         });
 
-    let bg_activators = raws.clone().filter(|raw| raw.template == "tech_tree").fold(HashMap::new(), |mut acc, raw| {
-        if let Some(activation_upgrade) = raw.fields.get("activation_upgrade") {
-            if let Some(loc_id) = raw.fields.get("name") {
-                acc.insert(normalize_sep(&activation_upgrade), loc_id.clone());
+    let bg_activators = raws.clone().filter(|raw| raw.template == "tech_tree").fold(
+        HashMap::new(),
+        |mut acc, raw| {
+            if let Some(activation_upgrade) = raw.fields.get("activation_upgrade") {
+                if let Some(loc_id) = raw.fields.get("name") {
+                    acc.insert(normalize_sep(&activation_upgrade), loc_id.clone());
+                }
             }
-        }
 
-        acc
-    });
+            acc
+        },
+    );
 
     for raw in raws {
         on_entry();
