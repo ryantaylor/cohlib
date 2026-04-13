@@ -77,6 +77,7 @@ pub fn extract_game_data(
     entries: &[ArchiveEntry],
     locale: LocaleStore,
     version: Version,
+    on_entry: impl Fn(),
 ) -> Result<GameData, Error> {
     let mut game_data = GameData::new(version);
     game_data.locale = locale;
@@ -86,6 +87,8 @@ pub fn extract_game_data(
         if !entry.path.starts_with("instances/") || entry.extension() != Some("xml") {
             continue;
         }
+
+        on_entry();
 
         let raw = match parse_entity_xml(&entry.bytes, &entry.path) {
             Ok(r) => r,
@@ -621,7 +624,7 @@ mod tests {
                 .to_string(),
             bytes: ABILITY_XML.to_vec(),
         };
-        let gd = extract_game_data(&[entry], LocaleStore(Default::default()), 99).unwrap();
+        let gd = extract_game_data(&[entry], LocaleStore(Default::default()), 99, || {}).unwrap();
         assert_eq!(gd.abilities.len(), 1);
         let ab = gd.abilities.get(&174094).unwrap();
         assert!(ab.autobuild);
@@ -637,7 +640,7 @@ mod tests {
             path: "instances/ebps/races/american/buildings/barracks_us.xml".to_string(),
             bytes: EBPS_XML.to_vec(),
         };
-        let gd = extract_game_data(&[entry], LocaleStore(Default::default()), 99).unwrap();
+        let gd = extract_game_data(&[entry], LocaleStore(Default::default()), 99, || {}).unwrap();
         assert_eq!(gd.entities.len(), 1);
         let e = gd.entities.get(&169963).unwrap();
         assert_eq!(e.spawns.len(), 2);

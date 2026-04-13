@@ -56,5 +56,8 @@ sha2          = "0.10"
 # Optional Ruby FFI
 magnus        = { version = "0.8" }
 
+# Progress bars
+indicatif     = "0.17"
+
 # Dev / test
 tempfile      = "3"

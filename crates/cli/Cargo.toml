@@ -25,3 +25,4 @@ data        = { workspace = true }
 flate2      = { workspace = true }
 tar         = { workspace = true }
 sha2        = { workspace = true }
+indicatif   = { workspace = true }

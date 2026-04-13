@@ -1,8 +1,22 @@
 //! cohlib CLI — maintainer tooling for managing the bundled game data.
 
-use std::{path::PathBuf, process};
+use std::{path::PathBuf, process, time::Duration};
+
+use indicatif::{ProgressBar, ProgressStyle};
 
 mod images;
+
+fn spinner_style() -> ProgressStyle {
+    ProgressStyle::with_template("{spinner:.cyan} {msg}")
+        .unwrap()
+        .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", ""])
+}
+
+fn bar_style() -> ProgressStyle {
+    ProgressStyle::with_template("{msg} [{bar:40.cyan/blue}] {pos}/{len}")
+        .unwrap()
+        .progress_chars("##-")
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -144,47 +158,62 @@ fn cmd_import(args: &[String]) {
         .join("LocaleEnglish.sga");
 
     let locale = if locale_sga.exists() {
-        eprintln!("Extracting locale from {}...", locale_sga.display());
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(spinner_style());
+        pb.set_message(format!("Extracting locale from {}...", locale_sga.display()));
+        pb.enable_steady_tick(Duration::from_millis(80));
         match locale::parse_locale_sga(&locale_sga) {
             Ok(l) => {
-                eprintln!("  {} locale strings loaded", l.0.len());
+                pb.finish_with_message(format!("Locale: {} strings", l.0.len()));
                 l
             }
             Err(e) => {
-                eprintln!("  warning: locale extraction failed: {e}");
+                pb.finish_with_message(format!("Locale: extraction failed: {e}"));
                 data::LocaleStore(std::collections::HashMap::new())
             }
         }
     } else {
-        eprintln!("  LocaleEnglish.sga not found, skipping locale");
+        eprintln!("LocaleEnglish.sga not found, skipping locale");
         data::LocaleStore(std::collections::HashMap::new())
     };
 
-    eprintln!("Extracting from {}...", attrib_sga.display());
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(spinner_style());
+    pb.set_message(format!("Reading {}...", attrib_sga.display()));
+    pb.enable_steady_tick(Duration::from_millis(80));
     let entries = match sga::open_archive(&attrib_sga) {
-        Ok(e) => e,
+        Ok(e) => {
+            pb.finish_with_message(format!("SGA: {} files", e.len()));
+            e
+        }
         Err(e) => {
-            eprintln!("error reading SGA archive: {e}");
+            pb.finish_with_message(format!("error reading SGA archive: {e}"));
             process::exit(1);
         }
     };
-    eprintln!("  {} files extracted", entries.len());
 
-    let gd = match attrib::extract_game_data(&entries, locale, version) {
+    let xml_count = entries
+        .iter()
+        .filter(|e| e.path.starts_with("instances/") && e.extension() == Some("xml"))
+        .count() as u64;
+
+    let pb = ProgressBar::new(xml_count);
+    pb.set_style(bar_style());
+    pb.set_message("Parsing entity XML");
+    let gd = match attrib::extract_game_data(&entries, locale, version, || pb.inc(1)) {
         Ok(gd) => gd,
         Err(e) => {
-            eprintln!("error extracting game data: {e}");
+            pb.finish_with_message(format!("error extracting game data: {e}"));
             process::exit(1);
         }
     };
-
-    eprintln!(
-        "  entities={} squads={} upgrades={} abilities={}",
+    pb.finish_with_message(format!(
+        "Game data: entities={} squads={} upgrades={} abilities={}",
         gd.entities.len(),
         gd.squads.len(),
         gd.upgrades.len(),
         gd.abilities.len(),
-    );
+    ));
 
     let version_str = version.to_string();
     let out_version_dir = output_dir.join(&version_str);
@@ -204,9 +233,8 @@ fn cmd_import(args: &[String]) {
     eprintln!("Written to {}", out_path.display());
 
     if let Some(cfg) = &images_config {
-        eprintln!("Extracting icons from {}...", cfg.icons_sga.display());
         match images::extract_images(cfg, version) {
-            Ok(()) => eprintln!("Icon extraction complete."),
+            Ok(()) => {}
             Err(e) => eprintln!("warning: icon extraction failed: {e}"),
         }
     }
