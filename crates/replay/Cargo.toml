@@ -1,0 +1,18 @@
+[package]
+name = "replay"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror    = { workspace = true }
+serde        = { workspace = true }
+nom          = { workspace = true }
+nom_locate   = { workspace = true }
+nom-tracable = { workspace = true }
+byteorder    = { workspace = true }
+uuid         = { workspace = true }
+magnus       = { workspace = true, optional = true }
+
+[features]
+trace  = ["nom-tracable/trace"]
+magnus = ["dep:magnus"]

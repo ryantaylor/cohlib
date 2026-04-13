@@ -1,0 +1,13 @@
+[package]
+name = "build-order"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+data      = { workspace = true }
+replay    = { workspace = true }
+magnus    = { workspace = true, optional = true }
+
+[features]
+magnus = ["dep:magnus"]

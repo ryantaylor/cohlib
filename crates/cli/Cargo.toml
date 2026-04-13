@@ -1,0 +1,27 @@
+[package]
+name = "cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "cohlib"
+path = "src/main.rs"
+
+[[bin]]
+name = "discover"
+path = "src/discover.rs"
+
+[dependencies]
+cohlib      = { workspace = true }
+sga         = { workspace = true }
+attrib      = { workspace = true }
+locale      = { workspace = true }
+json-import = { workspace = true }
+image       = { workspace = true }
+serde_json  = { workspace = true }
+serde       = { workspace = true }
+relic-sga   = { workspace = true }
+data        = { workspace = true }
+flate2      = { workspace = true }
+tar         = { workspace = true }
+sha2        = { workspace = true }

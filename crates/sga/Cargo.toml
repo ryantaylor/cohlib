@@ -1,0 +1,8 @@
+[package]
+name = "sga"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+relic-sga = { workspace = true }

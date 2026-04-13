@@ -1,0 +1,10 @@
+[package]
+name = "image"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+flate2    = { workspace = true }
+webp      = { workspace = true }
+texture2ddecoder = "0.1.2"

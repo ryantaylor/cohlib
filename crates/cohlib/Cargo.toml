@@ -1,0 +1,18 @@
+[package]
+name = "cohlib"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror   = { workspace = true }
+replay      = { workspace = true }
+data        = { workspace = true }
+build-order = { workspace = true }
+magnus      = { workspace = true, optional = true }
+
+[features]
+trace  = ["replay/trace"]
+magnus = ["dep:magnus", "replay/magnus", "data/magnus", "build-order/magnus"]
+
+[dev-dependencies]
+uuid = { workspace = true }

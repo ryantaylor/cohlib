@@ -1,0 +1,9 @@
+[package]
+name = "json-import"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror  = { workspace = true }
+data       = { workspace = true }
+serde_json = { workspace = true }

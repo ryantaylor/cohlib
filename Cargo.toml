@@ -1,0 +1,60 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+# Internal crates
+cohlib        = { path = "crates/cohlib" }
+replay        = { path = "crates/replay" }
+data          = { path = "crates/data" }
+build-order   = { path = "crates/build-order" }
+sga           = { path = "crates/sga" }
+attrib        = { path = "crates/attrib" }
+locale        = { path = "crates/locale" }
+json-import   = { path = "crates/json-import" }
+image         = { path = "crates/image" }
+
+# External: the upstream `sga` archive crate, aliased to avoid collision with our `sga` crate
+relic-sga     = { package = "sga", version = "0.1.1" }
+
+# Serialization
+serde         = { version = "1", features = ["derive"] }
+serde_json    = "1"
+
+# Error handling
+thiserror     = "2"
+
+# Compression
+flate2        = "1"
+
+# Replay parsing
+nom           = "7"
+nom_locate    = "4"
+nom-tracable  = "0.9"
+byteorder     = "1"
+uuid          = { version = "1", features = ["serde"] }
+
+# Attribute / locale parsing
+aes           = "0.8"
+cbc           = "0.1"
+md-5          = "0.10"
+quick-xml     = { version = "0.37", features = ["serialize"] }
+
+# Image conversion
+webp          = "0.2"
+
+# Archive creation
+tar           = "0.4"
+
+# Hashing
+sha2          = "0.10"
+
+# Optional Ruby FFI
+magnus        = { version = "0.8" }
+
+# Dev / test
+tempfile      = "3"

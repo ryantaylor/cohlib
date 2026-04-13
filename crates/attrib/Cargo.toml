@@ -1,0 +1,10 @@
+[package]
+name = "attrib"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+data      = { workspace = true }
+sga       = { workspace = true }
+quick-xml = { workspace = true }

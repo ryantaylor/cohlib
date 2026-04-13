@@ -1,0 +1,14 @@
+[package]
+name = "locale"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror  = { workspace = true }
+data       = { workspace = true }
+sga        = { workspace = true }
+serde_json = { workspace = true }
+aes        = { workspace = true }
+cbc        = { workspace = true }
+md-5       = { workspace = true }
+flate2     = { workspace = true }
