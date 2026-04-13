@@ -160,7 +160,10 @@ fn cmd_import(args: &[String]) {
     let locale = if locale_sga.exists() {
         let pb = ProgressBar::new_spinner();
         pb.set_style(spinner_style());
-        pb.set_message(format!("Extracting locale from {}...", locale_sga.display()));
+        pb.set_message(format!(
+            "Extracting locale from {}...",
+            locale_sga.display()
+        ));
         pb.enable_steady_tick(Duration::from_millis(80));
         match locale::parse_locale_sga(&locale_sga) {
             Ok(l) => {

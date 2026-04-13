@@ -82,18 +82,30 @@ pub fn extract_game_data(
     let mut game_data = GameData::new(version);
     game_data.locale = locale;
 
-    for entry in entries {
-        // Only process XML files under instances/
-        if !entry.path.starts_with("instances/") || entry.extension() != Some("xml") {
-            continue;
+    let raws = entries
+        .iter()
+        .filter(|entry| entry.path.starts_with("instances/") && entry.extension() == Some("xml"))
+        .filter_map(|entry| {
+            on_entry();
+
+            match parse_entity_xml(&entry.bytes, &entry.path) {
+                Ok(r) => Some(r),
+                Err(_) => None,
+            }
+        });
+
+    let bg_activators = raws.clone().filter(|raw| raw.template == "tech_tree").fold(HashMap::new(), |mut acc, raw| {
+        if let Some(activation_upgrade) = raw.fields.get("activation_upgrade") {
+            if let Some(loc_id) = raw.fields.get("name") {
+                acc.insert(normalize_sep(&activation_upgrade), loc_id.clone());
+            }
         }
 
-        on_entry();
+        acc
+    });
 
-        let raw = match parse_entity_xml(&entry.bytes, &entry.path) {
-            Ok(r) => r,
-            Err(_) => continue,
-        };
+    for raw in raws {
+        on_entry();
 
         let path_str = raw.path.join("/");
 
@@ -166,7 +178,13 @@ pub fn extract_game_data(
                 );
             }
             "upgrade" => {
-                let loc_id = parse_loc_str(raw.fields.get("screen_name"));
+                let mut loc_id = parse_loc_str(raw.fields.get("screen_name"));
+                if loc_id == 0 {
+                    // If the upgrade itself doesn't have a locstring associated
+                    // with it and it happens to activate a battlegroup, set the
+                    // locstring to that of the battlegroup
+                    loc_id = parse_loc_str(bg_activators.get(&path_str));
+                }
                 let icon_name = raw
                     .fields
                     .get("icon_name")
@@ -237,6 +255,7 @@ enum Ctx {
     StandardUpgrades,
     RaceList,
     RaceData,
+    TechTreeBag,
     Other,
 }
 
@@ -293,7 +312,9 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
                     }
                     "group" => {
                         let name = get_attr(e, b"name").unwrap_or_default();
-                        if name == "race_data" && ctx_stack.last() == Some(&Ctx::RaceList) {
+                        if name == "techtree_bag" {
+                            ctx_stack.push(Ctx::TechTreeBag);
+                        } else if name == "race_data" && ctx_stack.last() == Some(&Ctx::RaceList) {
                             ctx_stack.push(Ctx::RaceData);
                         } else {
                             ctx_stack.push(Ctx::Other);
@@ -334,6 +355,11 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
                                 if !in_race_data || !race_data_ui_found {
                                     fields.entry("screen_name".to_string()).or_insert(value);
                                 }
+                            } else if name == "name" && current_ctx == Some(&Ctx::TechTreeBag) {
+                                // battlegroup attributes use this naming convention, but
+                                // we have to make sure we're in the techtree_bag context
+                                // and not somewhere else like upgrades.
+                                fields.entry("name".to_string()).or_insert(value);
                             }
                         }
                     }
