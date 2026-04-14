@@ -11,6 +11,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use indicatif::{ProgressBar, ProgressStyle};
 use sha2::{Digest, Sha256};
 
 /// Configuration passed from `cmd_import` argument parsing.
@@ -168,23 +169,36 @@ pub fn extract_images(config: &ImagesConfig, version: u32) -> Result<(), String>
 fn extract_webp_icons(sga_path: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
     let entries = sga::open_archive(sga_path).map_err(|e| format!("cannot open icons SGA: {e}"))?;
 
+    let rrtex_entries: Vec<_> = entries
+        .iter()
+        .filter(|e| icon_name_from_path(&e.path).is_some())
+        .collect();
+
+    let pb = ProgressBar::new(rrtex_entries.len() as u64);
+    pb.set_style(
+        ProgressStyle::with_template("  Icons [{bar:40.cyan/blue}] {pos}/{len}")
+            .unwrap()
+            .progress_chars("##-"),
+    );
+
     let mut icons = BTreeMap::new();
     let mut skipped = 0usize;
 
-    for entry in &entries {
-        let Some(icon_name) = icon_name_from_path(&entry.path) else {
-            continue;
-        };
+    for entry in &rrtex_entries {
+        let icon_name = icon_name_from_path(&entry.path).unwrap();
         match image::extract_icon(&entry.bytes) {
             Ok(webp) => {
                 icons.insert(icon_name.to_string(), webp);
             }
             Err(e) => {
-                eprintln!("  warning: skipping {}: {e}", entry.path);
+                pb.println(format!("  warning: skipping {}: {e}", entry.path));
                 skipped += 1;
             }
         }
+        pb.inc(1);
     }
+
+    pb.finish_and_clear();
 
     if skipped > 0 {
         eprintln!("  ({skipped} icons skipped due to conversion errors)");
@@ -214,23 +228,36 @@ fn extract_webp_maps(sga_path: &Path) -> Result<BTreeMap<String, Vec<u8>>, Strin
     let entries =
         sga::open_archive(sga_path).map_err(|e| format!("cannot open scenarios SGA: {e}"))?;
 
+    let rrtex_entries: Vec<_> = entries
+        .iter()
+        .filter(|e| map_name_from_path(&e.path).is_some())
+        .collect();
+
+    let pb = ProgressBar::new(rrtex_entries.len() as u64);
+    pb.set_style(
+        ProgressStyle::with_template("  Maps  [{bar:40.cyan/blue}] {pos}/{len}")
+            .unwrap()
+            .progress_chars("##-"),
+    );
+
     let mut maps = BTreeMap::new();
     let mut skipped = 0usize;
 
-    for entry in &entries {
-        let Some(map_name) = map_name_from_path(&entry.path) else {
-            continue;
-        };
+    for entry in &rrtex_entries {
+        let map_name = map_name_from_path(&entry.path).unwrap();
         match image::extract_icon(&entry.bytes) {
             Ok(webp) => {
                 maps.insert(map_name.to_string(), webp);
             }
             Err(e) => {
-                eprintln!("  warning: skipping {}: {e}", entry.path);
+                pb.println(format!("  warning: skipping {}: {e}", entry.path));
                 skipped += 1;
             }
         }
+        pb.inc(1);
     }
+
+    pb.finish_and_clear();
 
     if skipped > 0 {
         eprintln!("  ({skipped} map images skipped due to conversion errors)");
@@ -244,14 +271,13 @@ fn extract_webp_maps(sga_path: &Path) -> Result<BTreeMap<String, Vec<u8>>, Strin
 /// per-map minimap images. Terrain texture variants (`_tmt_*`) and backup files
 /// (`* - backup.rrtex`) are excluded by not matching these suffixes.
 ///
-/// Strips the `scenarios/` leading prefix and the `.rrtex` extension.
+/// Strips the `.rrtex` extension.
 /// Returns `None` for non-matching entries.
 fn map_name_from_path(path: &str) -> Option<&str> {
     if !path.ends_with("_mm_generated.rrtex") && !path.ends_with("_mm_handmade.rrtex") {
         return None;
     }
-    let s = path.strip_prefix("scenarios/").unwrap_or(path);
-    s.strip_suffix(".rrtex")
+    path.strip_suffix(".rrtex")
 }
 
 /// SHA-256 hash of `data`, returned as a lowercase hex string.

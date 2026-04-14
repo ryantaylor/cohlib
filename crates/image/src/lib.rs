@@ -35,7 +35,6 @@
 mod error;
 pub use error::Error;
 
-use std::io::Read;
 
 const MAGIC_TMAN: &[u8] = b"DATATMAN";
 const MAGIC_TDAT: &[u8] = b"DATATDAT";
@@ -103,11 +102,11 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 /// - `mip_count <= 1`: one or more sequential zlib streams whose concatenated
 ///   decompressed output is `[16-byte header] + BCn`. Small textures (icons) fit
 ///   in a single stream; large textures (map minimaps) are split into many 64 KiB
-///   streams. All streams are read until the expected BCn size is reached.
-/// - mipped, compressed: N sequential zlib streams, each decompressing to
-///   `[mip_level u32, width u32, height u32, u32] + BCn`. Locate level 0.
-/// - mipped, uncompressed: raw entries `[mip_level u32, width u32, height u32,
-///   block_size u32] + BCn`, concatenated. Locate level 0.
+///   streams. All streams are read until the expected BCn size is reached. The very
+///   last bytes may be stored as a raw (uncompressed) tail after the final stream.
+/// - mipped: entries may be raw (uncompressed) or zlib-compressed and may be
+///   interleaved. Each entry decompresses to (or is stored as)
+///   `[mip_level u32, w u32, h u32, reserved u32] + BCn`. We locate level 0.
 fn decompress_tdat(
     payload: &[u8],
     width: u32,
@@ -122,24 +121,23 @@ fn decompress_tdat(
         .ok_or_else(|| err("DATATDAT payload too short (< 16 bytes)"))?;
 
     if mip_count <= 1 {
-        // Compute expected BCn data size so we know when we have everything.
         let block_bytes: usize = match compression_format {
             18 | 19 => 8,
             22 | 28 => 16,
-            _ => 0, // unknown format — fall through with whatever we decompress
+            _ => 0,
         };
         let expected_bcn =
             (width as usize).div_ceil(4) * (height as usize).div_ceil(4) * block_bytes;
 
-        // Decompress the first zlib stream. ZlibDecoder::read_to_end correctly
-        // handles a stream that is a prefix of `data`; total_in() reports bytes
-        // consumed so we can locate the next stream boundary.
-        let mut decoder = flate2::read::ZlibDecoder::new(data);
-        let mut decompressed: Vec<u8> = Vec::new();
-        decoder
-            .read_to_end(&mut decompressed)
+        // Decompress the first zlib stream. Use Decompress directly (not ZlibDecoder)
+        // to get an exact consumed-byte count — ZlibDecoder buffers 8 KiB ahead,
+        // making total_in() unreliable for locating the next stream boundary.
+        let cap = (expected_bcn + 16).max(65536 + 16);
+        let mut d = flate2::Decompress::new(true);
+        let mut decompressed: Vec<u8> = Vec::with_capacity(cap);
+        d.decompress_vec(data, &mut decompressed, flate2::FlushDecompress::Finish)
             .map_err(|e| err(&e.to_string()))?;
-        let mut pos = decoder.total_in() as usize;
+        let mut pos = d.total_in() as usize;
 
         if decompressed.len() < 16 {
             return Err(err("decompressed data too short (< 16 bytes)"));
@@ -154,26 +152,25 @@ fn decompress_tdat(
                 .ok_or_else(|| err("decompressed data too short (< 16 bytes)"));
         }
 
-        // Large textures (e.g., map minimaps) split BC7 data across many
-        // sequential 64 KiB zlib streams. Read the remaining streams and append
-        // until we have the full expected BCn payload.
+        // Large textures (e.g., map minimaps) split BCn data across many sequential
+        // 64 KiB zlib streams. Streams are contiguous — decompress directly at `pos`
+        // without scanning for the next header. Scanning for zlib CMF+FLG byte pairs
+        // causes false positives inside BCn data, corrupting the stream position.
         while decompressed.len() < 16 + expected_bcn {
             let remaining = match data.get(pos..) {
                 Some(r) if !r.is_empty() => r,
                 _ => break,
             };
-            let offset = match find_next_zlib(remaining) {
-                Some(o) => o,
-                None => break,
-            };
-            pos += offset;
 
-            let mut decoder2 = flate2::read::ZlibDecoder::new(&data[pos..]);
-            let mut chunk: Vec<u8> = Vec::new();
-            if decoder2.read_to_end(&mut chunk).is_err() {
+            let mut d2 = flate2::Decompress::new(true);
+            let mut chunk: Vec<u8> = Vec::with_capacity(65536 + 16);
+            if d2
+                .decompress_vec(remaining, &mut chunk, flate2::FlushDecompress::Finish)
+                .is_err()
+            {
                 break;
             }
-            let consumed = decoder2.total_in() as usize;
+            let consumed = d2.total_in() as usize;
             if consumed == 0 || chunk.is_empty() {
                 break;
             }
@@ -181,9 +178,8 @@ fn decompress_tdat(
             pos += consumed;
         }
 
-        // When all 64-KiB streams are exact multiples (e.g., 2048×2048 BC7), the
-        // last few BCn bytes may be stored as a raw (uncompressed) tail after the
-        // final zlib stream rather than in their own stream. Append them directly.
+        // When the final zlib stream ends exactly on a block boundary, the last few
+        // BCn bytes may be stored as an uncompressed tail after the zlib streams.
         if decompressed.len() < 16 + expected_bcn {
             let still_need = (16 + expected_bcn) - decompressed.len();
             if let Some(tail) = data.get(pos..) {
@@ -208,29 +204,24 @@ fn decompress_tdat(
         }
     };
 
-    // Distinguish format by whether the data begins with a valid zlib header.
-    // Compressed mipped: the first byte after the 16-byte chunk header is 0x78
-    // (zlib magic), meaning the first mip is a zlib stream starting at offset 0.
-    // Uncompressed mipped: byte 0 is the low byte of `mip_level` (a small integer).
-    if is_zlib_start(data) {
-        // Compressed mipped: multiple sequential zlib streams starting at offset 0.
-        decompress_mipped_zlib(data, width, height, block_bytes)
-            .ok_or_else(|| err("mip level 0 not found in compressed mipped texture"))
-    } else {
-        // Uncompressed mipped: raw concatenated entries.
-        decompress_mipped_raw(data, width, height)
-            .ok_or_else(|| err("mip level 0 not found in uncompressed mipped texture"))
-    }
+    decompress_mipped(data, width, height, block_bytes)
+        .ok_or_else(|| err("mip level 0 not found in mipped texture"))
 }
 
-/// Attempt to decode mipped texture as sequential zlib streams.
+/// Decode a mipped texture. Entries may be raw (uncompressed) or zlib-compressed,
+/// and the two formats may be interleaved within the same texture (e.g., smallest
+/// mips zlib-compressed, middle mips raw, largest mips zlib-compressed again).
+/// Each entry decompresses to (or is stored as):
+/// `[mip_level: u32, w: u32, h: u32, reserved: u32] + BCn`.
 ///
-/// Each stream decompresses to `[mip_level: u32, w: u32, h: u32, u32] + BCn`.
+/// At each position the format is inferred from the dim fields: if bytes
+/// `[pos+4..pos+8]` and `[pos+8..pos+12]` parse as u32 LE values in [1, 16384],
+/// the entry is treated as raw; otherwise a zlib decompression is attempted.
+/// This heuristic is reliable because zlib-compressed bytes at those offsets are
+/// effectively arbitrary data, making a valid dim pair extremely unlikely.
+///
 /// Returns the BCn data for `mip_level == 0`, or `None` if not found.
-///
-/// Uses `flate2::Decompress` directly to get an accurate count of consumed input
-/// bytes per stream (unlike `ZlibDecoder`, which may read-ahead into the next stream).
-fn decompress_mipped_zlib(
+fn decompress_mipped(
     data: &[u8],
     width: u32,
     height: u32,
@@ -240,90 +231,63 @@ fn decompress_mipped_zlib(
     let by = (height as usize).div_ceil(4);
     let base_mip_size = bx * by * block_bytes;
 
-    // First stream begins at offset 0 (caller verified is_zlib_start).
     let mut pos = 0usize;
 
-    // Limit iterations to avoid looping forever on malformed data.
     for _ in 0..64 {
-        if pos >= data.len() {
+        if pos + 16 > data.len() {
             break;
         }
 
-        let mut d = flate2::Decompress::new(true); // expect zlib header
-        let mut dec = Vec::new();
-        match d.decompress_vec(&data[pos..], &mut dec, flate2::FlushDecompress::Finish) {
-            Ok(_) => {}
-            Err(_) => break,
-        }
+        let entry_w = u32::from_le_bytes(data[pos + 4..pos + 8].try_into().ok()?);
+        let entry_h = u32::from_le_bytes(data[pos + 8..pos + 12].try_into().ok()?);
+        let looks_raw = entry_w > 0 && entry_w <= 16384 && entry_h > 0 && entry_h <= 16384;
 
-        let consumed = d.total_in() as usize;
-        if consumed == 0 || dec.len() < 16 {
-            break;
-        }
-        pos += consumed;
+        if looks_raw {
+            // Raw entry: [mip_level u32, w u32, h u32, reserved u32] + BCn
+            let mip_level = u32::from_le_bytes(data[pos..pos + 4].try_into().ok()?);
+            let mip_size =
+                (entry_w as usize).div_ceil(4) * (entry_h as usize).div_ceil(4) * block_bytes;
 
-        let mip_level = u32::from_le_bytes(dec[0..4].try_into().ok()?);
-        let chunk_w = u32::from_le_bytes(dec[4..8].try_into().ok()?);
-        let chunk_h = u32::from_le_bytes(dec[8..12].try_into().ok()?);
-        if mip_level == 0 && chunk_w == width && chunk_h == height {
-            return dec.get(16..16 + base_mip_size).map(|s| s.to_vec());
-        }
+            if mip_level == 0 && entry_w == width && entry_h == height {
+                return data.get(pos + 16..pos + 16 + mip_size).map(|s| s.to_vec());
+            }
 
-        // Advance to the next zlib stream. Streams are typically contiguous,
-        // but scan forward in case of inter-stream padding.
-        match find_next_zlib(&data[pos..]) {
-            Some(off) => pos += off,
-            None => break,
+            if mip_size == 0 || pos + 16 + mip_size > data.len() {
+                break;
+            }
+            pos += 16 + mip_size;
+        } else {
+            // Zlib stream: decompress directly at pos (no header scanning needed).
+            let mut d = flate2::Decompress::new(true);
+            let mut dec = Vec::with_capacity(base_mip_size + 16);
+            match d.decompress_vec(&data[pos..], &mut dec, flate2::FlushDecompress::Finish) {
+                Ok(_) => {}
+                Err(_) => break,
+            }
+            let consumed = d.total_in() as usize;
+            if consumed == 0 || dec.len() < 16 {
+                break;
+            }
+
+            let mip_level = u32::from_le_bytes(dec[0..4].try_into().ok()?);
+            let chunk_w = u32::from_le_bytes(dec[4..8].try_into().ok()?);
+            let chunk_h = u32::from_le_bytes(dec[8..12].try_into().ok()?);
+
+            if mip_level == 0 && chunk_w == width && chunk_h == height {
+                // Some streams contain slightly fewer BCn bytes than base_mip_size
+                // (the last block row may be omitted when it falls outside the texture
+                // bounds). Zero-pad to base_mip_size so the BCn decoder always receives
+                // a full block-aligned buffer.
+                let available = dec.len().saturating_sub(16);
+                let mut bcn = dec.get(16..dec.len()).unwrap_or(&[]).to_vec();
+                bcn.resize(base_mip_size.max(available), 0);
+                return Some(bcn);
+            }
+
+            pos += consumed;
         }
     }
     None
-}
-
-/// Attempt to decode mipped texture as raw (uncompressed) concatenated entries.
-///
-/// Each entry: `[mip_level: u32, width: u32, height: u32, data_size: u32] + BCn`.
-///
-/// The 4th field is the **total byte count** of BCn data for this mip level
-/// (not bytes-per-block). This can be derived from:
-///   `ceil(w/4) × ceil(h/4) × bytes_per_block`
-/// but is stored directly so no block-size knowledge is needed here.
-///
-/// Returns the BCn data for the entry where `mip_level == 0` and dimensions match.
-fn decompress_mipped_raw(data: &[u8], width: u32, height: u32) -> Option<Vec<u8>> {
-    let mut offset = 0usize;
-    while offset + 16 <= data.len() {
-        let mip_level = u32::from_le_bytes(data[offset..offset + 4].try_into().ok()?);
-        let entry_w = u32::from_le_bytes(data[offset + 4..offset + 8].try_into().ok()?);
-        let entry_h = u32::from_le_bytes(data[offset + 8..offset + 12].try_into().ok()?);
-        let data_size =
-            u32::from_le_bytes(data[offset + 12..offset + 16].try_into().ok()?) as usize;
-        offset += 16;
-
-        if mip_level == 0 && entry_w == width && entry_h == height {
-            return data.get(offset..offset + data_size).map(|s| s.to_vec());
-        }
-
-        if data_size == 0 || data_size > data.len() {
-            break;
-        }
-        offset += data_size;
-    }
-    None
-}
-
-/// Returns `true` if `data` begins with a valid zlib header byte pair.
-///
-/// Zlib streams start with `0x78` followed by `0x01`, `0x5e`, `0x9c`, or `0xda`.
-fn is_zlib_start(data: &[u8]) -> bool {
-    matches!(data, [0x78, b, ..] if matches!(b, 0x01 | 0x5e | 0x9c | 0xda))
-}
-
-/// Find the next zlib stream header anywhere in `data`, returning its offset.
-///
-/// Used to locate subsequent mip streams after consuming one stream.
-fn find_next_zlib(data: &[u8]) -> Option<usize> {
-    data.windows(2)
-        .position(|w| w[0] == 0x78 && matches!(w[1], 0x01 | 0x5e | 0x9c | 0xda))
 }
 
 // ---------------------------------------------------------------------------
