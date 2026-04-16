@@ -72,3 +72,54 @@ fn bundled_upgrade_lookup() {
     let upgrade = store.get_upgrade(170560, 10612);
     assert!(upgrade.is_some(), "upgrade 170560 not found at v10612");
 }
+
+// ---------------------------------------------------------------------------
+// local_name_for_formatted — simple (direct loc_id) path
+// ---------------------------------------------------------------------------
+
+#[test]
+fn local_name_for_formatted_simple_entity() {
+    let store = VersionedStore::bundled();
+
+    // barracks_us pbgid=169963, loc_id=11153231 → "Barracks"
+    let name = store.local_name_for_formatted(169963, 10612);
+    assert!(
+        name.is_some(),
+        "barracks_us (169963) should have a formatted name at v10612"
+    );
+    assert_eq!(name.as_deref(), Some("Barracks"));
+}
+
+#[test]
+fn local_name_for_formatted_simple_squad() {
+    let store = VersionedStore::bundled();
+
+    // riflemen_us pbgid=159619, loc_id=11241668 → "Riflemen Squad"
+    let name = store.local_name_for_formatted(159619, 10612);
+    assert!(
+        name.is_some(),
+        "riflemen_us (159619) should have a formatted name at v10612"
+    );
+    assert_eq!(name.as_deref(), Some("Riflemen Squad"));
+}
+
+#[test]
+fn local_name_for_formatted_returns_none_for_unknown_pbgid() {
+    let store = VersionedStore::bundled();
+
+    assert_eq!(
+        store.local_name_for_formatted(0xDEADBEEF, 10612),
+        None,
+        "unknown pbgid should return None"
+    );
+}
+
+#[test]
+fn local_name_for_formatted_matches_local_name_for_for_plain_entities() {
+    let store = VersionedStore::bundled();
+
+    // For entities with a plain loc_id, both APIs should agree.
+    let plain = store.local_name_for(169963, 10612).map(|s| s.to_owned());
+    let formatted = store.local_name_for_formatted(169963, 10612);
+    assert_eq!(plain, formatted);
+}

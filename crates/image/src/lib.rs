@@ -35,7 +35,6 @@
 mod error;
 pub use error::Error;
 
-
 const MAGIC_TMAN: &[u8] = b"DATATMAN";
 const MAGIC_TDAT: &[u8] = b"DATATDAT";
 
@@ -221,12 +220,7 @@ fn decompress_tdat(
 /// effectively arbitrary data, making a valid dim pair extremely unlikely.
 ///
 /// Returns the BCn data for `mip_level == 0`, or `None` if not found.
-fn decompress_mipped(
-    data: &[u8],
-    width: u32,
-    height: u32,
-    block_bytes: usize,
-) -> Option<Vec<u8>> {
+fn decompress_mipped(data: &[u8], width: u32, height: u32, block_bytes: usize) -> Option<Vec<u8>> {
     let bx = (width as usize).div_ceil(4);
     let by = (height as usize).div_ceil(4);
     let base_mip_size = bx * by * block_bytes;

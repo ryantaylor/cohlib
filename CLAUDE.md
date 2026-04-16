@@ -73,7 +73,9 @@ Ported from the Ruby [vault](https://github.com/ryantaylor/vault) library. Uses 
 
 Data flow: raw bytes → header → Chunky/Chunk/Tick parsing → command/message aggregation → `Replay`.
 
-Key types: `Replay`, `Player`, `Command` (enum over 9 command types), `Message`, `Faction`, `Team`, `GameType`, `Map`.
+Key types: `Replay`, `Player`, `Command` (enum over 10 command types + `Unknown`), `Message`, `Faction`, `Team`, `GameType`, `Map`.
+
+Test replay fixtures live in `crates/cohlib/replays/`.
 
 **Tick timing**: tick values are raw engine ticks; divide by 8 to get seconds.
 
@@ -94,7 +96,7 @@ Key types: `Replay`, `Player`, `Command` (enum over 9 command types), `Message`,
 Maintainer tooling only — not needed for library use.
 
 - `cohlib populate <source_dirs>... --output <data_dir>` — import from cohdata/reinforce JSON directories
-- `cohlib import <depot_path> --version <build> --output <data_dir>` — extract from CoH3 SGA depot
+- `cohlib import <depot_path> --version <build> --output <data_dir> [--images <dir>] [--icons-sga <path>] [--scenarios-sga <path>]` — extract from CoH3 SGA depot
 - `discover` — developer binary for inspecting raw SGA archive contents
 
 ### Error handling

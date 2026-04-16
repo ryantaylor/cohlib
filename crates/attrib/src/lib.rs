@@ -50,6 +50,8 @@ pub struct RawEntity {
     pub spawns: Vec<String>,
     /// Upgrade paths this entity supports (from standard_upgrades list). Ebps only.
     pub upgrades: Vec<String>,
+    /// Parsed `screen_name_formatter` block, if present and non-empty.
+    pub screen_name_formatter: Option<data::ScreenNameFormatter>,
 }
 
 /// Parse a single entity XML file, deriving path from `file_path`.
@@ -58,7 +60,7 @@ pub struct RawEntity {
 /// `"instances/abilities/races/american/auto_build/auto_build_barracks.xml"`.
 pub fn parse_entity_xml(bytes: &[u8], file_path: &str) -> Result<RawEntity, Error> {
     let path = derive_path(file_path);
-    let (template, pbgid, fields, spawns, upgrades) = parse_xml(bytes)?;
+    let (template, pbgid, fields, spawns, upgrades, screen_name_formatter) = parse_xml(bytes)?;
     Ok(RawEntity {
         path,
         template,
@@ -66,6 +68,7 @@ pub fn parse_entity_xml(bytes: &[u8], file_path: &str) -> Result<RawEntity, Erro
         fields,
         spawns,
         upgrades,
+        screen_name_formatter,
     })
 }
 
@@ -87,11 +90,7 @@ pub fn extract_game_data(
         .filter(|entry| entry.path.starts_with("instances/") && entry.extension() == Some("xml"))
         .filter_map(|entry| {
             on_entry();
-
-            match parse_entity_xml(&entry.bytes, &entry.path) {
-                Ok(r) => Some(r),
-                Err(_) => None,
-            }
+            parse_entity_xml(&entry.bytes, &entry.path).ok()
         });
 
     let bg_activators = raws.clone().filter(|raw| raw.template == "tech_tree").fold(
@@ -99,7 +98,7 @@ pub fn extract_game_data(
         |mut acc, raw| {
             if let Some(activation_upgrade) = raw.fields.get("activation_upgrade") {
                 if let Some(loc_id) = raw.fields.get("name") {
-                    acc.insert(normalize_sep(&activation_upgrade), loc_id.clone());
+                    acc.insert(normalize_sep(activation_upgrade), loc_id.clone());
                 }
             }
 
@@ -139,6 +138,7 @@ pub fn extract_game_data(
                         icon_name,
                         autobuild,
                         builds,
+                        screen_name_formatter: raw.screen_name_formatter,
                     },
                 );
             }
@@ -200,6 +200,7 @@ pub fn extract_game_data(
                         path: raw.path,
                         loc_id,
                         icon_name,
+                        screen_name_formatter: raw.screen_name_formatter,
                     },
                 );
             }
@@ -259,17 +260,22 @@ enum Ctx {
     RaceList,
     RaceData,
     TechTreeBag,
+    /// Inside `<template_reference name="screen_name_formatter" value="ui_text_formatter">`.
+    ScreenNameFormatter,
+    /// Inside `<list name="formatter_arguments">` within a `ScreenNameFormatter`.
+    FormatterArguments,
     Other,
 }
 
-/// Parse XML bytes, extracting template, pbgid, named leaf values, spawns, and upgrades.
-///
+/// Parse XML bytes, extracting template, pbgid, named leaf values, spawns, upgrades,
+/// and an optional screen_name_formatter.
 type ParseXmlResult = (
     String,
     u32,
     HashMap<String, String>,
     Vec<String>,
     Vec<String>,
+    Option<data::ScreenNameFormatter>,
 );
 
 /// Uses a context stack to track list/group nesting and collect multi-valued fields.
@@ -282,6 +288,8 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
     let mut fields: HashMap<String, String> = HashMap::new();
     let mut spawns: Vec<String> = Vec::new();
     let mut upgrades: Vec<String> = Vec::new();
+    let mut formatter_template_id: u32 = 0;
+    let mut formatter_arg_ids: Vec<u32> = Vec::new();
 
     // Context stack for tracking nested elements
     let mut ctx_stack: Vec<Ctx> = Vec::new();
@@ -310,6 +318,11 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
                             "spawn_items" => ctx_stack.push(Ctx::SpawnItems),
                             "standard_upgrades" => ctx_stack.push(Ctx::StandardUpgrades),
                             "race_list" => ctx_stack.push(Ctx::RaceList),
+                            "formatter_arguments"
+                                if ctx_stack.last() == Some(&Ctx::ScreenNameFormatter) =>
+                            {
+                                ctx_stack.push(Ctx::FormatterArguments)
+                            }
                             _ => ctx_stack.push(Ctx::Other),
                         }
                     }
@@ -319,6 +332,15 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
                             ctx_stack.push(Ctx::TechTreeBag);
                         } else if name == "race_data" && ctx_stack.last() == Some(&Ctx::RaceList) {
                             ctx_stack.push(Ctx::RaceData);
+                        } else {
+                            ctx_stack.push(Ctx::Other);
+                        }
+                    }
+                    "template_reference" => {
+                        let name = get_attr(e, b"name").unwrap_or_default();
+                        let value = get_attr(e, b"value").unwrap_or_default();
+                        if name == "screen_name_formatter" && !value.is_empty() {
+                            ctx_stack.push(Ctx::ScreenNameFormatter);
                         } else {
                             ctx_stack.push(Ctx::Other);
                         }
@@ -363,6 +385,20 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
                                 // we have to make sure we're in the techtree_bag context
                                 // and not somewhere else like upgrades.
                                 fields.entry("name".to_string()).or_insert(value);
+                            } else if name == "formatter"
+                                && current_ctx == Some(&Ctx::ScreenNameFormatter)
+                            {
+                                if let Ok(id) = value.trim_start_matches('$').parse::<u32>() {
+                                    formatter_template_id = id;
+                                }
+                            } else if name == "locstring_value"
+                                && current_ctx == Some(&Ctx::FormatterArguments)
+                            {
+                                if let Ok(id) = value.trim_start_matches('$').parse::<u32>() {
+                                    if id != 0 {
+                                        formatter_arg_ids.push(id);
+                                    }
+                                }
                             }
                         }
                     }
@@ -429,7 +465,23 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
 
     let pbgid = pbgid.ok_or_else(|| Error::Attrib("missing pbgid".into()))?;
 
-    Ok((template, pbgid, fields, spawns, upgrades))
+    let screen_name_formatter = if formatter_template_id != 0 {
+        Some(data::ScreenNameFormatter {
+            template_loc_id: formatter_template_id,
+            arg_loc_ids: formatter_arg_ids,
+        })
+    } else {
+        None
+    };
+
+    Ok((
+        template,
+        pbgid,
+        fields,
+        spawns,
+        upgrades,
+        screen_name_formatter,
+    ))
 }
 
 /// Extract an attribute value by name from an XML element.
@@ -677,5 +729,64 @@ mod tests {
         assert!(e
             .spawns
             .contains(&"sbps/races/american/infantry/riflemen_us".to_string()));
+    }
+
+    // ---------------------------------------------------------------------------
+    // screen_name_formatter tests
+    // ---------------------------------------------------------------------------
+
+    const UPGRADE_FORMATTER_XML: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
+<instance version="5" template="upgrade">
+  <variant name="default">
+    <group name="upgrade_bag">
+      <uniqueid name="pbgid" value="2160077" />
+      <group name="ui_info">
+        <locstring name="screen_name" value="0" />
+        <template_reference name="screen_name_formatter" value="ui_text_formatter">
+          <list name="formatter_arguments">
+            <locstring name="locstring_value" value="11241678" />
+          </list>
+          <locstring name="formatter" value="11261319" />
+        </template_reference>
+      </group>
+    </group>
+  </variant>
+</instance>"#;
+
+    #[test]
+    fn parse_upgrade_xml_with_formatter() {
+        let entity = parse_entity_xml(
+            UPGRADE_FORMATTER_XML,
+            "instances/upgrade/american/battlegroups/armored/armored_right_3_sherman_easy_8_production_unlock_us.xml",
+        )
+        .unwrap();
+        assert_eq!(entity.pbgid, 2160077);
+        let fmt = entity.screen_name_formatter.unwrap();
+        assert_eq!(fmt.template_loc_id, 11261319);
+        assert_eq!(fmt.arg_loc_ids, vec![11241678]);
+    }
+
+    #[test]
+    fn parse_upgrade_xml_without_formatter_has_none() {
+        // ABILITY_XML has no screen_name_formatter block.
+        let entity = parse_entity_xml(
+            ABILITY_XML,
+            "instances/abilities/races/american/auto_build/auto_build_barracks.xml",
+        )
+        .unwrap();
+        assert!(entity.screen_name_formatter.is_none());
+    }
+
+    #[test]
+    fn extract_game_data_upgrade_with_formatter() {
+        let entry = ArchiveEntry {
+            path: "instances/upgrade/american/battlegroups/armored/armored_right_3_sherman_easy_8_production_unlock_us.xml".to_string(),
+            bytes: UPGRADE_FORMATTER_XML.to_vec(),
+        };
+        let gd = extract_game_data(&[entry], LocaleStore(Default::default()), 99, || {}).unwrap();
+        let upgrade = gd.upgrades.get(&2160077).unwrap();
+        let fmt = upgrade.screen_name_formatter.as_ref().unwrap();
+        assert_eq!(fmt.template_loc_id, 11261319);
+        assert_eq!(fmt.arg_loc_ids, vec![11241678]);
     }
 }

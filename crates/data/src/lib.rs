@@ -7,6 +7,19 @@ use std::path::Path;
 
 pub type Version = u32;
 
+/// Composed localized name built from a format template and positional arguments.
+///
+/// The template string contains `%1%`, `%2%`, … placeholders (1-indexed).
+/// Each element of `arg_loc_ids` resolves to a localized string substituted into
+/// the corresponding placeholder.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScreenNameFormatter {
+    /// Loc ID for the format template, e.g. 11261319 → "Unlock %1% Production"
+    pub template_loc_id: u32,
+    /// Loc IDs for positional arguments in order.
+    pub arg_loc_ids: Vec<u32>,
+}
+
 trait Localizable {
     fn loc_id(&self) -> u32;
 }
@@ -47,6 +60,8 @@ pub struct Upgrade {
     pub path: Vec<String>,
     pub loc_id: u32,
     pub icon_name: String,
+    #[serde(default)]
+    pub screen_name_formatter: Option<ScreenNameFormatter>,
 }
 
 impl Localizable for &Upgrade {
@@ -63,6 +78,8 @@ pub struct Ability {
     pub icon_name: String,
     pub autobuild: bool,
     pub builds: Option<String>,
+    #[serde(default)]
+    pub screen_name_formatter: Option<ScreenNameFormatter>,
 }
 
 impl Localizable for &Ability {
@@ -228,6 +245,57 @@ impl VersionedStore {
             .or_else(|| self.get_localizable_upgrade(pbgid, build).map(|u| u.loc_id))
             .or_else(|| self.get_localizable_ability(pbgid, build).map(|a| a.loc_id))?;
         self.localize(loc_id, build)
+    }
+
+    /// Returns the localized screen name for `pbgid` at `build`, supporting both
+    /// plain `loc_id` lookup and formatter-based composition.
+    ///
+    /// Tries the direct `loc_id` path first. If that fails (e.g. `loc_id == 0`),
+    /// falls back to a `screen_name_formatter` on the upgrade or ability. Returns
+    /// `None` if neither resolves to a name.
+    pub fn local_name_for_formatted(&self, pbgid: u32, build: Version) -> Option<String> {
+        if let Some(s) = self.local_name_for(pbgid, build) {
+            return Some(s.to_owned());
+        }
+        if let Some(fmt) = self.formatter_for_upgrade(pbgid, build) {
+            return self.apply_formatter(&fmt, build);
+        }
+        if let Some(fmt) = self.formatter_for_ability(pbgid, build) {
+            return self.apply_formatter(&fmt, build);
+        }
+        None
+    }
+
+    /// Returns the `screen_name_formatter` for an upgrade at `build`, cloned to
+    /// avoid a borrow conflict with the subsequent `localize` calls.
+    fn formatter_for_upgrade(&self, pbgid: u32, build: Version) -> Option<ScreenNameFormatter> {
+        self.resolve(build, |gd| {
+            gd.upgrades
+                .get(&pbgid)
+                .and_then(|u| u.screen_name_formatter.clone())
+        })
+    }
+
+    /// Returns the `screen_name_formatter` for an ability at `build`, cloned.
+    fn formatter_for_ability(&self, pbgid: u32, build: Version) -> Option<ScreenNameFormatter> {
+        self.resolve(build, |gd| {
+            gd.abilities
+                .get(&pbgid)
+                .and_then(|a| a.screen_name_formatter.clone())
+        })
+    }
+
+    /// Resolves a formatter's template and arguments, then substitutes `%1%`, `%2%`, …
+    /// placeholders with the localized argument strings.
+    fn apply_formatter(&self, fmt: &ScreenNameFormatter, build: Version) -> Option<String> {
+        let template = self.localize(fmt.template_loc_id, build)?;
+        let mut result = template.to_owned();
+        for (i, &arg_id) in fmt.arg_loc_ids.iter().enumerate() {
+            let placeholder = format!("%{}%", i + 1);
+            let arg = self.localize(arg_id, build).unwrap_or("");
+            result = result.replace(&placeholder, arg);
+        }
+        Some(result)
     }
 
     /// Returns an entity whose joined path (e.g. `"ebps/races/american/buildings/production/barracks_us"`)
@@ -432,5 +500,145 @@ mod tests {
         assert!(store
             .local_name_for(1, 100)
             .is_some_and(|s| s == "test string"));
+    }
+
+    // ---------------------------------------------------------------------------
+    // ScreenNameFormatter / local_name_for_formatted tests
+    // ---------------------------------------------------------------------------
+
+    fn make_gd_with_upgrade_formatter(
+        version: Version,
+        pbgid: u32,
+        template_loc_id: u32,
+        arg_loc_ids: Vec<u32>,
+        locale: LocaleStore,
+    ) -> GameData {
+        let mut gd = GameData::new(version);
+        gd.locale = locale;
+        gd.upgrades.insert(
+            pbgid,
+            Upgrade {
+                pbgid,
+                path: vec!["upgrade".into(), "test".into()],
+                loc_id: 0,
+                icon_name: String::new(),
+                screen_name_formatter: Some(ScreenNameFormatter {
+                    template_loc_id,
+                    arg_loc_ids,
+                }),
+            },
+        );
+        gd
+    }
+
+    #[test]
+    fn local_name_for_formatted_uses_formatter_when_loc_id_zero() {
+        let mut store = VersionedStore::new();
+        let mut locale = HashMap::new();
+        locale.insert(100, "Hello %1%".to_string());
+        locale.insert(200, "World".to_string());
+        store.add_version(make_gd_with_upgrade_formatter(
+            300,
+            42,
+            100,
+            vec![200],
+            LocaleStore(locale),
+        ));
+        assert_eq!(
+            store.local_name_for_formatted(42, 300),
+            Some("Hello World".to_string())
+        );
+    }
+
+    #[test]
+    fn local_name_for_formatted_prefers_direct_loc_id() {
+        let mut store = VersionedStore::new();
+        let mut locale = HashMap::new();
+        locale.insert(10, "Direct Name".to_string());
+        locale.insert(100, "Formatter Template %1%".to_string());
+        locale.insert(200, "Arg".to_string());
+        let mut gd = GameData::new(300);
+        gd.locale = LocaleStore(locale);
+        // Upgrade with both a loc_id and a formatter — loc_id should win.
+        gd.upgrades.insert(
+            42,
+            Upgrade {
+                pbgid: 42,
+                path: vec!["upgrade".into(), "test".into()],
+                loc_id: 10,
+                icon_name: String::new(),
+                screen_name_formatter: Some(ScreenNameFormatter {
+                    template_loc_id: 100,
+                    arg_loc_ids: vec![200],
+                }),
+            },
+        );
+        store.add_version(gd);
+        assert_eq!(
+            store.local_name_for_formatted(42, 300),
+            Some("Direct Name".to_string())
+        );
+    }
+
+    #[test]
+    fn local_name_for_formatted_returns_none_if_neither() {
+        let mut store = VersionedStore::new();
+        store.add_version(make_gd(300, 42, 0, LocaleStore(HashMap::new())));
+        assert_eq!(store.local_name_for_formatted(42, 300), None);
+    }
+
+    #[test]
+    fn apply_formatter_substitutes_single_arg() {
+        let mut store = VersionedStore::new();
+        let mut locale = HashMap::new();
+        locale.insert(1, "Unlock %1% Production".to_string());
+        locale.insert(2, "Sherman Easy Eight".to_string());
+        store.add_version(make_gd_with_upgrade_formatter(
+            100,
+            9,
+            1,
+            vec![2],
+            LocaleStore(locale),
+        ));
+        assert_eq!(
+            store.local_name_for_formatted(9, 100),
+            Some("Unlock Sherman Easy Eight Production".to_string())
+        );
+    }
+
+    #[test]
+    fn apply_formatter_substitutes_multiple_args() {
+        let mut store = VersionedStore::new();
+        let mut locale = HashMap::new();
+        locale.insert(1, "Allows the %1% to be produced from the %2%.".to_string());
+        locale.insert(2, "Sherman Easy Eight".to_string());
+        locale.insert(3, "Tank Depot".to_string());
+        store.add_version(make_gd_with_upgrade_formatter(
+            100,
+            9,
+            1,
+            vec![2, 3],
+            LocaleStore(locale),
+        ));
+        assert_eq!(
+            store.local_name_for_formatted(9, 100),
+            Some("Allows the Sherman Easy Eight to be produced from the Tank Depot.".to_string())
+        );
+    }
+
+    #[test]
+    fn apply_formatter_returns_none_if_template_missing() {
+        let mut store = VersionedStore::new();
+        // Locale has arg but NOT the template.
+        let mut locale = HashMap::new();
+        locale.insert(2, "Arg Value".to_string());
+        store.add_version(make_gd_with_upgrade_formatter(
+            100,
+            9,
+            999, // template_loc_id not in locale
+            vec![2],
+            LocaleStore(locale),
+        ));
+        assert_eq!(store.local_name_for_formatted(9, 100), None);
     }
 }

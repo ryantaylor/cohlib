@@ -6,7 +6,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use data::{Ability, Entity, GameData, LocaleStore, Squad, Upgrade, Version};
+use data::{Ability, Entity, GameData, LocaleStore, ScreenNameFormatter, Squad, Upgrade, Version};
 
 /// Ability paths that are autobuilds even if name doesn't contain "auto_build"/"autobuild".
 const AUTOBUILDS: &[&str] =
@@ -148,6 +148,9 @@ fn parse_ability_bag(
     } else {
         Some(builds_raw.to_string())
     };
+    let screen_name_formatter = bag
+        .pointer("/ui_info/screen_name_formatter")
+        .and_then(parse_screen_name_formatter);
 
     let path_str = path.join("/");
     let autobuild = path.contains(&"auto_build")
@@ -161,6 +164,7 @@ fn parse_ability_bag(
         icon_name,
         autobuild,
         builds,
+        screen_name_formatter,
     };
 
     out.insert(pbgid, ability);
@@ -399,16 +403,55 @@ fn parse_upgrade_leaf(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    let screen_name_formatter = bag
+        .pointer("/ui_info/screen_name_formatter")
+        .and_then(parse_screen_name_formatter);
 
     let upgrade = Upgrade {
         pbgid,
         path: path.iter().map(|s| s.to_string()).collect(),
         loc_id,
         icon_name,
+        screen_name_formatter,
     };
 
     out.insert(pbgid, upgrade);
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// screen_name_formatter
+// ---------------------------------------------------------------------------
+
+/// Parse a `screen_name_formatter` JSON block into a [`ScreenNameFormatter`].
+///
+/// Returns `None` if the block is absent, has an empty `template_reference` value,
+/// or lacks a valid `formatter` locstring ID.
+fn parse_screen_name_formatter(block: &Value) -> Option<ScreenNameFormatter> {
+    let tr_value = block
+        .pointer("/template_reference/value")
+        .and_then(|v| v.as_str())?;
+    if tr_value.is_empty() {
+        return None;
+    }
+    let template_loc_id = parse_loc_id(block.pointer("/formatter/locstring/value"));
+    if template_loc_id == 0 {
+        return None;
+    }
+    let arg_loc_ids: Vec<u32> = block
+        .get("formatter_arguments")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .map(|item| parse_loc_id(item.pointer("/locstring_value/locstring/value")))
+                .filter(|&id| id != 0)
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(ScreenNameFormatter {
+        template_loc_id,
+        arg_loc_ids,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -486,6 +529,7 @@ fn parse_loc_id(value: Option<&Value>) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use data::VersionedStore;
     use std::path::PathBuf;
 
     fn data_dir() -> PathBuf {
@@ -658,5 +702,119 @@ mod tests {
         assert!(game_data.upgrades.is_empty());
         assert!(game_data.abilities.is_empty());
         assert!(game_data.locale.0.is_empty());
+    }
+
+    // ---------------------------------------------------------------------------
+    // parse_screen_name_formatter tests
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn parse_screen_name_formatter_real_example() {
+        let json: Value = serde_json::from_str(
+            r#"{
+                "template_reference": { "name": "screen_name_formatter", "value": "ui_text_formatter" },
+                "formatter": { "locstring": { "name": "formatter", "value": "11261319" } },
+                "formatter_arguments": [
+                    { "locstring_value": { "locstring": { "name": "locstring_value", "value": "11241678" } } }
+                ]
+            }"#,
+        )
+        .unwrap();
+        let fmt = parse_screen_name_formatter(&json).unwrap();
+        assert_eq!(fmt.template_loc_id, 11261319);
+        assert_eq!(fmt.arg_loc_ids, vec![11241678]);
+    }
+
+    #[test]
+    fn parse_screen_name_formatter_multiple_args() {
+        let json: Value = serde_json::from_str(
+            r#"{
+                "template_reference": { "name": "screen_name_formatter", "value": "ui_text_formatter" },
+                "formatter": { "locstring": { "name": "formatter", "value": "11261320" } },
+                "formatter_arguments": [
+                    { "locstring_value": { "locstring": { "name": "locstring_value", "value": "11241678" } } },
+                    { "locstring_value": { "locstring": { "name": "locstring_value", "value": "11156914" } } }
+                ]
+            }"#,
+        )
+        .unwrap();
+        let fmt = parse_screen_name_formatter(&json).unwrap();
+        assert_eq!(fmt.template_loc_id, 11261320);
+        assert_eq!(fmt.arg_loc_ids, vec![11241678, 11156914]);
+    }
+
+    #[test]
+    fn parse_screen_name_formatter_empty_returns_none() {
+        let json: Value = serde_json::from_str(
+            r#"{ "template_reference": { "name": "screen_name_formatter", "value": "" } }"#,
+        )
+        .unwrap();
+        assert!(parse_screen_name_formatter(&json).is_none());
+    }
+
+    #[test]
+    fn parse_screen_name_formatter_missing_template_loc_id_returns_none() {
+        // Has a non-empty template_reference value but no formatter locstring.
+        let json: Value = serde_json::from_str(
+            r#"{ "template_reference": { "name": "screen_name_formatter", "value": "ui_text_formatter" } }"#,
+        )
+        .unwrap();
+        assert!(parse_screen_name_formatter(&json).is_none());
+    }
+
+    #[test]
+    fn test_parse_upgrades_with_formatter() {
+        // The sherman e8 battlegroup unlock first appears in v24421.
+        let path = PathBuf::from("/Users/ryantaylor/cohdata/data/24421/upgrade.json");
+        let text = std::fs::read_to_string(&path).expect("upgrade.json not found");
+        let value: Value = serde_json::from_str(&text).expect("parse JSON");
+
+        let mut upgrades: HashMap<u32, Upgrade> = HashMap::new();
+        parse_upgrades(&value, &mut upgrades).expect("parse upgrades");
+
+        // armored_right_3_sherman_easy_8_production_unlock_us: pbgid=2160077
+        // screen_name.value=0 but screen_name_formatter template=11261319, arg=11241678
+        let upgrade = upgrades.get(&2160077).expect("sherman e8 unlock not found");
+        assert_eq!(
+            upgrade.loc_id, 0,
+            "should have no direct screen_name loc_id"
+        );
+        let fmt = upgrade
+            .screen_name_formatter
+            .as_ref()
+            .expect("should have a screen_name_formatter");
+        assert_eq!(fmt.template_loc_id, 11261319);
+        assert_eq!(fmt.arg_loc_ids, vec![11241678]);
+    }
+
+    /// End-to-end: import v24421 (the first version with the Sherman Easy Eight
+    /// battlegroup unlock), build a VersionedStore, and verify that
+    /// `local_name_for_formatted` resolves the formatter to the expected string.
+    ///
+    /// pbgid 2160077 = armored_right_3_sherman_easy_8_production_unlock_us
+    ///   screen_name loc_id = 0  (no direct locstring)
+    ///   screen_name_formatter: template 11261319 → "Unlock %1% Production"
+    ///                          arg     11241678  → "M4A3E8 Sherman Easy Eight"
+    ///   expected: "Unlock M4A3E8 Sherman Easy Eight Production"
+    #[test]
+    fn local_name_for_formatted_applies_formatter_end_to_end() {
+        let dir = PathBuf::from("/Users/ryantaylor/cohdata/data/24421");
+        let game_data = import_version(&dir, 24421).expect("import_version failed");
+
+        let mut store = VersionedStore::new();
+        store.add_version(game_data);
+
+        // Plain loc_id path should return None for this upgrade.
+        assert_eq!(
+            store.local_name_for(2160077, 24421),
+            None,
+            "upgrade 2160077 should have no direct screen_name"
+        );
+
+        // Formatter path should compose the full name.
+        assert_eq!(
+            store.local_name_for_formatted(2160077, 24421),
+            Some("Unlock M4A3E8 Sherman Easy Eight Production".to_string()),
+        );
     }
 }

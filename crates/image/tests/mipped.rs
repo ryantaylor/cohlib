@@ -13,14 +13,11 @@
 ///   (semois map minimaps)
 
 const AMERICAN: &[u8] = include_bytes!("fixtures/american_mipped.rrtex");
-const ITALIAN_INFANTRY_AK: &[u8] =
-    include_bytes!("fixtures/italian_infantry_ak_icon_mipped.rrtex");
+const ITALIAN_INFANTRY_AK: &[u8] = include_bytes!("fixtures/italian_infantry_ak_icon_mipped.rrtex");
 const GERMAN: &[u8] = include_bytes!("fixtures/german_mipped.rrtex");
 const SPEC_OPS_US: &[u8] = include_bytes!("fixtures/spec_ops_us_icon_mipped.rrtex");
-const SPECIAL_WEAPONS_US: &[u8] =
-    include_bytes!("fixtures/special_weapons_us_icon_mipped.rrtex");
-const INDIAN_ARTILLERY_UK: &[u8] =
-    include_bytes!("fixtures/indian_artillery_uk_icon_mipped.rrtex");
+const SPECIAL_WEAPONS_US: &[u8] = include_bytes!("fixtures/special_weapons_us_icon_mipped.rrtex");
+const INDIAN_ARTILLERY_UK: &[u8] = include_bytes!("fixtures/indian_artillery_uk_icon_mipped.rrtex");
 const SEMOIS_2P: &[u8] = include_bytes!("fixtures/semois_2p_mm_handmade.rrtex");
 const SEMOIS_4P: &[u8] = include_bytes!("fixtures/semois_4p_mm_handmade.rrtex");
 
