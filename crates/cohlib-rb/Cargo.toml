@@ -1,0 +1,9 @@
+[package]
+name = "cohlib-rb"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+magnus   = { workspace = true }
+cohlib   = { workspace = true, features = ["magnus"] }
