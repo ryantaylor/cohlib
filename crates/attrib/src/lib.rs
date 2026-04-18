@@ -85,15 +85,16 @@ pub fn extract_game_data(
     let mut game_data = GameData::new(version);
     game_data.locale = locale;
 
-    let raws = entries
+    let raws: Vec<RawEntity> = entries
         .iter()
         .filter(|entry| entry.path.starts_with("instances/") && entry.extension() == Some("xml"))
         .filter_map(|entry| {
             on_entry();
             parse_entity_xml(&entry.bytes, &entry.path).ok()
-        });
+        })
+        .collect();
 
-    let bg_activators = raws.clone().filter(|raw| raw.template == "tech_tree").fold(
+    let bg_activators = raws.iter().filter(|raw| raw.template == "tech_tree").fold(
         HashMap::new(),
         |mut acc, raw| {
             if let Some(activation_upgrade) = raw.fields.get("activation_upgrade") {
@@ -105,6 +106,19 @@ pub fn extract_game_data(
             acc
         },
     );
+
+    // Build a lookup from normalized path → icon_name for all parsed entities that have an icon.
+    // Used to inherit icons from parent_pbg when an entity has no icon of its own.
+    let parent_icons: HashMap<String, String> = raws
+        .iter()
+        .filter_map(|raw| {
+            let icon = raw.fields.get("icon_name")?;
+            if icon.is_empty() {
+                return None;
+            }
+            Some((raw.path.join("/"), normalize_sep(icon)))
+        })
+        .collect();
 
     for raw in raws {
         on_entry();
@@ -124,11 +138,7 @@ pub fn extract_game_data(
                     .any(|s| s == "auto_build" || s == "autobuild")
                     || AUTOBUILDS.contains(&path_str.as_str());
                 let loc_id = parse_loc_str(raw.fields.get("screen_name"));
-                let icon_name = raw
-                    .fields
-                    .get("icon_name")
-                    .map(|s| normalize_sep(s))
-                    .unwrap_or_default();
+                let icon_name = resolve_icon(&raw.fields, &parent_icons);
                 game_data.abilities.insert(
                     raw.pbgid,
                     Ability {
@@ -144,11 +154,7 @@ pub fn extract_game_data(
             }
             "ebps" => {
                 let loc_id = parse_loc_str(raw.fields.get("screen_name"));
-                let icon_name = raw
-                    .fields
-                    .get("icon_name")
-                    .map(|s| normalize_sep(s))
-                    .unwrap_or_default();
+                let icon_name = resolve_icon(&raw.fields, &parent_icons);
                 let spawns: Vec<String> = raw.spawns.iter().map(|s| normalize_sep(s)).collect();
                 let upgrades: Vec<String> = raw.upgrades.iter().map(|s| normalize_sep(s)).collect();
                 game_data.entities.insert(
@@ -165,11 +171,7 @@ pub fn extract_game_data(
             }
             "sbps" => {
                 let loc_id = parse_loc_str(raw.fields.get("screen_name"));
-                let icon_name = raw
-                    .fields
-                    .get("icon_name")
-                    .map(|s| normalize_sep(s))
-                    .unwrap_or_default();
+                let icon_name = resolve_icon(&raw.fields, &parent_icons);
                 game_data.squads.insert(
                     raw.pbgid,
                     Squad {
@@ -188,11 +190,7 @@ pub fn extract_game_data(
                     // locstring to that of the battlegroup
                     loc_id = parse_loc_str(bg_activators.get(&path_str));
                 }
-                let icon_name = raw
-                    .fields
-                    .get("icon_name")
-                    .map(|s| normalize_sep(s))
-                    .unwrap_or_default();
+                let icon_name = resolve_icon(&raw.fields, &parent_icons);
                 game_data.upgrades.insert(
                     raw.pbgid,
                     Upgrade {
@@ -218,6 +216,19 @@ pub fn extract_game_data(
 /// Normalizes Windows backslashes to forward slashes.
 fn normalize_sep(s: &str) -> String {
     s.replace('\\', "/")
+}
+
+/// Resolves an entity's icon name: uses its own `icon_name` field if non-empty,
+/// otherwise falls back to the icon of the entity referenced by `parent_pbg`.
+fn resolve_icon(fields: &HashMap<String, String>, parent_icons: &HashMap<String, String>) -> String {
+    if let Some(icon) = fields.get("icon_name").filter(|s| !s.is_empty()) {
+        return normalize_sep(icon);
+    }
+    fields
+        .get("parent_pbg")
+        .map(|p| normalize_sep(p))
+        .and_then(|p| parent_icons.get(&p).cloned())
+        .unwrap_or_default()
 }
 
 /// Parses a loc_id from an optional string value (may have "$" prefix or be "0").
@@ -828,6 +839,64 @@ mod tests {
         )
         .unwrap();
         assert!(entity.screen_name_formatter.is_none());
+    }
+
+    /// Ability with no icon_name but a parent_pbg that has an icon.
+    /// Mirrors strafing_run_p47_us.xml → strafing_run_generic.xml.
+    #[test]
+    fn extract_game_data_ability_inherits_parent_icon() {
+        const PARENT_XML: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
+<instance version="5" template="abilities">
+  <variant name="default">
+    <group name="ability_bag">
+      <uniqueid name="pbgid" value="10001" />
+      <group name="ui_info">
+        <locstring name="screen_name" value="11000001" />
+        <file name="icon_name" value="common\abilities\strafing_run_p47_us" />
+      </group>
+    </group>
+  </variant>
+</instance>"#;
+
+        const CHILD_XML: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
+<instance version="5" template="abilities">
+  <variant name="default">
+    <group name="ability_bag">
+      <uniqueid name="pbgid" value="10002" />
+      <instance_reference name="parent_pbg" value="abilities\races\common\archetypes\flight\strafing_run_generic" />
+      <group name="ui_info">
+        <locstring name="screen_name" value="11000002" />
+      </group>
+    </group>
+  </variant>
+</instance>"#;
+
+        let entries = vec![
+            ArchiveEntry {
+                path: "instances/abilities/races/common/archetypes/flight/strafing_run_generic.xml"
+                    .to_string(),
+                bytes: PARENT_XML.to_vec(),
+            },
+            ArchiveEntry {
+                path: "instances/abilities/races/american/aircraft/strafing_run_p47_us.xml"
+                    .to_string(),
+                bytes: CHILD_XML.to_vec(),
+            },
+        ];
+
+        let gd = extract_game_data(&entries, LocaleStore(Default::default()), 99, || {}).unwrap();
+        let child = gd.abilities.get(&10002).unwrap();
+        assert_eq!(
+            child.icon_name,
+            "common/abilities/strafing_run_p47_us",
+            "child should inherit parent's icon when it has none"
+        );
+        let parent = gd.abilities.get(&10001).unwrap();
+        assert_eq!(
+            parent.icon_name,
+            "common/abilities/strafing_run_p47_us",
+            "parent's own icon should be unchanged"
+        );
     }
 
     #[test]
