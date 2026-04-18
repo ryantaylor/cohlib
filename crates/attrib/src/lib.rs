@@ -374,10 +374,17 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
                             (get_attr(e, b"name"), get_attr(e, b"value"))
                         {
                             if name == "screen_name" {
-                                // For sbps: capture screen_name from inside race_data.
-                                // For others: capture the first screen_name encountered.
-                                let in_race_data = current_ctx == Some(&Ctx::RaceData);
-                                if !in_race_data || !race_data_ui_found {
+                                // For sbps: capture screen_name from inside race_data (authoritative).
+                                // race_data must overwrite any earlier value from other ext blocks
+                                // (e.g. squad_reinforce_ext also has a screen_name).
+                                // For non-sbps: capture the first screen_name encountered.
+                                // Check ancestors because screen_name is nested inside
+                                // race_data > info > locstring, so the top of the stack is Other.
+                                let in_race_data =
+                                    ctx_stack.iter().rev().any(|c| c == &Ctx::RaceData);
+                                if in_race_data && !race_data_ui_found {
+                                    fields.insert("screen_name".to_string(), value);
+                                } else if !in_race_data {
                                     fields.entry("screen_name".to_string()).or_insert(value);
                                 }
                             } else if name == "name" && current_ctx == Some(&Ctx::TechTreeBag) {
@@ -407,8 +414,11 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
                             (get_attr(e, b"name"), get_attr(e, b"value"))
                         {
                             if name == "icon_name" {
-                                let in_race_data = current_ctx == Some(&Ctx::RaceData);
-                                if !in_race_data || !race_data_ui_found {
+                                let in_race_data =
+                                    ctx_stack.iter().rev().any(|c| c == &Ctx::RaceData);
+                                if in_race_data && !race_data_ui_found {
+                                    fields.insert("icon_name".to_string(), value);
+                                } else if !in_race_data {
                                     fields.entry("icon_name".to_string()).or_insert(value);
                                 }
                             }
@@ -559,6 +569,32 @@ mod tests {
   </variant>
 </instance>"#;
 
+    /// Reproduces the bug where squad_reinforce_ext's screen_name (e.g. "Reinforce") appears
+    /// before squad_ui_ext's race_data screen_name in the XML and was incorrectly captured first.
+    const SBPS_REINFORCE_EXT_BEFORE_UI_EXT_XML: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
+<instance version="5" template="sbps">
+  <variant name="default">
+    <list name="extensions">
+      <template_reference name="squadexts" value="sbpextensions\squad_reinforce_ext">
+        <group name="ui_info">
+          <locstring name="screen_name" value="11153295" />
+        </group>
+      </template_reference>
+      <template_reference name="squadexts" value="sbpextensions\squad_ui_ext">
+        <list name="race_list">
+          <group name="race_data">
+            <group name="info">
+              <file name="icon_name" value="races\german\infantry\panzer_grenadier_ger" />
+              <locstring name="screen_name" value="11166831" />
+            </group>
+          </group>
+        </list>
+      </template_reference>
+    </list>
+    <uniqueid name="pbgid" value="188642" />
+  </variant>
+</instance>"#;
+
     #[test]
     fn parse_ability_xml_pbgid() {
         let entity = parse_entity_xml(
@@ -656,6 +692,23 @@ mod tests {
         assert_eq!(
             entity.fields.get("screen_name").map(|s| s.as_str()),
             Some("11241668")
+        );
+    }
+
+    /// Regression: squad_reinforce_ext has a screen_name ("Reinforce") that appears before
+    /// squad_ui_ext's race_data screen_name in the XML. The race_data value must win.
+    #[test]
+    fn parse_sbps_xml_race_data_screen_name_beats_reinforce_ext() {
+        let entity = parse_entity_xml(
+            SBPS_REINFORCE_EXT_BEFORE_UI_EXT_XML,
+            "instances/sbps/races/german/infantry/panzergrenadier_ger.xml",
+        )
+        .unwrap();
+        assert_eq!(entity.pbgid, 188642);
+        assert_eq!(
+            entity.fields.get("screen_name").map(|s| s.as_str()),
+            Some("11166831"),
+            "race_data screen_name should override the reinforce_ext screen_name"
         );
     }
 

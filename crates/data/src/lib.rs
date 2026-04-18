@@ -641,4 +641,20 @@ mod tests {
         ));
         assert_eq!(store.local_name_for_formatted(9, 100), None);
     }
+
+    #[test]
+    fn local_name_for_formatted_regular_data_works() {
+        let store = VersionedStore::bundled();
+        // Version 44736 should have read game data (panzergrenadier squad entity)
+        assert!(store.local_name_for_formatted(188642, 44736).is_some());
+        assert_eq!(store.local_name_for_formatted(188642, 44736).unwrap(), "Panzergrenadier Squad");
+    }
+
+    #[test]
+    fn load_name_for_regular_data_works() {
+        let store = VersionedStore::bundled();
+        // Version 44736 should have read game data (panzergrenadier squad entity)
+        assert!(store.local_name_for(188642, 44736).is_some());
+        assert_eq!(store.local_name_for(188642, 44736).unwrap(), "Panzergrenadier Squad");
+    }
 }
