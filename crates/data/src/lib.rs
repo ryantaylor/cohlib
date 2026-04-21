@@ -79,6 +79,10 @@ pub struct Ability {
     pub autobuild: bool,
     pub builds: Option<String>,
     #[serde(default)]
+    pub spawns: Vec<String>,
+    #[serde(default)]
+    pub upgrades: Vec<String>,
+    #[serde(default)]
     pub screen_name_formatter: Option<ScreenNameFormatter>,
 }
 

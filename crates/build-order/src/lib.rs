@@ -11,74 +11,6 @@ use std::collections::HashMap;
 use data::{Entity, Version, VersionedStore};
 use replay::{Command, Replay};
 
-/// Ability paths that are autobuilds even if name doesn't contain "auto_build"/"autobuild".
-const AUTOBUILDS: &[&str] =
-    &["abilities/races/american/battlegroups/infantry/infantry_left_2a_medical_tent"];
-
-/// Ability name suffixes (last path segment) that are spawner abilities.
-const SPAWNERS: &[&str] = &[
-    "armored_support_flame_p3_ak",
-    "armored_support_command_p4_ak",
-    "italian_combined_arms_bersaglieri_ak",
-    "italian_combined_arms_semovente_ak",
-    "italian_combined_arms_m13_40_ak",
-    "italian_infantry_double_l640_ak",
-    "italian_infantry_guastatori_ak",
-    "italian_infantry_cannone_da_105_ak",
-    "infiltration_left_1_vampire_ht_goliath_ak",
-    "british_air_and_sea_left_2a_centaur_cs_uk",
-    "british_air_and_sea_right_1_commandos_uk",
-    "british_air_and_sea_right_2a_pack_howitzer_team_uk",
-    "british_air_and_sea_right_2b_commando_lmg_team_uk",
-    "british_armored_right_2_crusader_aa_uk",
-    "british_armored_left_2_churchill",
-    "british_armored_left_3b_churchill_black_prince_uk",
-    "artillery_gurkhas_uk",
-    "artillery_4_2_inch_heavy_mortar_uk",
-    "artillery_bl_5_5_heavy_artillery_uk",
-    "australian_defense_archer_tank_destroyer_call_in_uk",
-    "australian_defense_australian_light_infantry_uk",
-    "australian_defense_2pdr_at_gun_uk",
-    "airborne_right_1a_pathfinders_us",
-    "airborne_right_1b_paradrop_hmg_us",
-    "airborne_right_2_paratrooper_us",
-    "airborne_right_3_paradrop_at_gun_us",
-    "armored_left_2b_recovery_vehicle_us",
-    "armored_right_2a_scott_us",
-    "armored_right_3_easy_8_task_force_us",
-    "special_operations_left_1a_m29_weasal_us",
-    "special_operations_left_1b_m29_weasal_with_pack_howitzer",
-    "special_operations_left_3_whizbang_us",
-    "special_operations_right_2_devils_brigade_us",
-    "infantry_left_1_rifleman_convert_to_ranger_us",
-    "infantry_right_1a_artillery_observers_us",
-    "infantry_right_2_105mm_howitzer_us",
-    "breakthrough_right_3a_assault_group_ger",
-    "breakthrough_left_1b_truck_2_5_ger",
-    "breakthrough_left_2b_panzer_iv_cmd_ger",
-    "breakthrough_left_3_tiger_ger",
-    "luftwaffe_right_2_fallschirmjagers_ger",
-    "luftwaffe_left_1b_fallschirmpioneers_ger",
-    "luftwaffe_left_2b_combat_group_ger",
-    "luftwaffe_left_2a_weapon_drop_ger",
-    "luftwaffe_left_3_88mm_at_gun_ger",
-    "mechanized_right_2a_stug_assault_group_ger",
-    "mechanized_left_2b_8_rad_ger",
-    "mechanized_right_3_panther_ger",
-    "mechanized_left_3a_wespe_ger",
-    "coastal_left_1_coastal_reserve_ger",
-    "coastal_artillery_officer_ger",
-    "coastal_obice_ger",
-    "halftrack_deployment_panzerjager_inf_1_ak",
-    "halftrack_deployment_assault_grenadier_1_ak",
-    "halftrack_deployment_at_gun_1_ak",
-    "halftrack_deployment_leig_1_ak",
-    "halftrack_deployment_piv_tank_hunter_group_ak",
-    "halftrack_deployment_stug_assault_group_ak",
-    "halftrack_deployment_panzer_iii_assault_group_ak",
-    "halftrack_deployment_tiger_ak",
-];
-
 /// A single action in the build order.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "magnus", magnus::wrap(class = "CohLib::BuildAction"))]
@@ -143,7 +75,6 @@ pub fn extract_build_order(
 
     let mut actions = factory.consolidate();
     rectify_suspects(&mut actions, version, store);
-    actions.retain(|a| !a.cancelled);
 
     Ok(BuildOrder { actions })
 }
@@ -240,9 +171,7 @@ impl<'a> Factory<'a> {
 
     fn classify_use_ability(&mut self, tick: u32, index: u32, pbgid: u32) -> bool {
         if let Some(ability) = self.store.get_ability(pbgid, self.version) {
-            let autobuild = ability.autobuild;
-            let path = ability.path.clone();
-            if autobuild || is_autobuild_by_path(&path) {
+            if ability.autobuild {
                 self.buildings.push(PendingAction {
                     tick,
                     index,
@@ -251,11 +180,20 @@ impl<'a> Factory<'a> {
                     suspect: false,
                     cancelled: false,
                 });
-            } else if is_spawner_by_path(&path) {
+            } else if !ability.spawns.is_empty() {
                 self.buildings.push(PendingAction {
                     tick,
                     index,
                     kind: BuildActionKind::TrainUnit,
+                    pbgid,
+                    suspect: false,
+                    cancelled: false,
+                });
+            } else if !ability.upgrades.is_empty() {
+                self.buildings.push(PendingAction {
+                    tick,
+                    index,
+                    kind: BuildActionKind::ResearchUpgrade,
                     pbgid,
                     suspect: false,
                     cancelled: false,
@@ -266,8 +204,16 @@ impl<'a> Factory<'a> {
     }
 
     fn classify_use_battlegroup_ability(&mut self, tick: u32, index: u32, pbgid: u32) -> bool {
-        // UseBattlegroupAbility is always a battlegroup action (mirrors reinforce's
-        // BATTLEGROUP_COMMANDS list). Spawner/autobuild checks only apply to UseAbility.
+        if let Some(ability) = self.store.get_ability(pbgid, self.version) {
+            if ability.autobuild {
+                return self.push_battlegroup(tick, index, pbgid, BuildActionKind::ConstructBuilding);
+            } else if !ability.spawns.is_empty() {
+                return self.push_battlegroup(tick, index, pbgid, BuildActionKind::TrainUnit);
+            } else if !ability.upgrades.is_empty() {
+                return self.push_battlegroup(tick, index, pbgid, BuildActionKind::ResearchUpgrade);
+            }
+        }
+
         self.push_battlegroup(tick, index, pbgid, BuildActionKind::UseBattlegroupAbility)
     }
 
@@ -421,76 +367,10 @@ fn produces(entity: &Entity, pbgid: u32, version: Version, store: &VersionedStor
             .unwrap_or(false)
 }
 
-// ── Path helpers ──────────────────────────────────────────────────────────────
-
-fn is_autobuild_by_path(path: &[String]) -> bool {
-    let joined = path.join("/");
-    path.iter()
-        .any(|s| s.contains("auto_build") || s.contains("autobuild"))
-        || AUTOBUILDS.contains(&joined.as_str())
-}
-
-fn is_spawner_by_path(path: &[String]) -> bool {
-    path.last()
-        .map(|s| SPAWNERS.contains(&s.as_str()))
-        .unwrap_or(false)
-}
-
+// ── Test helpers ──────────────────────────────────────────────────────────────
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn is_autobuild_detects_auto_build_segment() {
-        assert!(is_autobuild_by_path(&[
-            "abilities".into(),
-            "auto_build_barracks".into()
-        ]));
-    }
-
-    #[test]
-    fn is_autobuild_detects_autobuild_segment() {
-        assert!(is_autobuild_by_path(&[
-            "abilities".into(),
-            "autobuild_something".into()
-        ]));
-    }
-
-    #[test]
-    fn is_autobuild_hardcoded_entry() {
-        assert!(is_autobuild_by_path(&[
-            "abilities".into(),
-            "races".into(),
-            "american".into(),
-            "battlegroups".into(),
-            "infantry".into(),
-            "infantry_left_2a_medical_tent".into()
-        ]));
-    }
-
-    #[test]
-    fn is_autobuild_false_for_normal_ability() {
-        assert!(!is_autobuild_by_path(&[
-            "abilities".into(),
-            "throw_grenade".into()
-        ]));
-    }
-
-    #[test]
-    fn is_spawner_detects_known_spawner() {
-        assert!(is_spawner_by_path(&[
-            "abilities".into(),
-            "airborne_right_2_paratrooper_us".into()
-        ]));
-    }
-
-    #[test]
-    fn is_spawner_false_for_normal_ability() {
-        assert!(!is_spawner_by_path(&[
-            "abilities".into(),
-            "throw_grenade".into()
-        ]));
-    }
 
     #[test]
     fn build_action_fields() {
@@ -519,6 +399,7 @@ mod tests {
         let actions = factory.consolidate();
         assert!(actions[0].cancelled);
         assert!(!actions[1].cancelled);
+        assert_eq!(actions.len(), 2);
     }
 
     #[test]
@@ -566,6 +447,82 @@ mod tests {
         });
         factory.cancel_construction();
         assert!(factory.buildings[0].suspect);
+    }
+
+    #[test]
+    fn classify_use_ability_as_train_unit() {
+        let mut gd = data::GameData::new(10612);
+        gd.abilities.insert(
+            100,
+            data::Ability {
+                pbgid: 100,
+                path: vec!["abilities".into(), "call_in".into()],
+                loc_id: 0,
+                icon_name: String::new(),
+                autobuild: false,
+                builds: None,
+                spawns: vec!["sbps/races/german/infantry/coastal_reserves_ger".into()],
+                upgrades: vec![],
+                screen_name_formatter: None,
+            },
+        );
+        let mut store = VersionedStore::new();
+        store.add_version(gd);
+        let mut factory = Factory::new(true, 10612, &store);
+        factory.classify_use_ability(10, 0, 100);
+        let actions = factory.consolidate();
+        assert_eq!(actions[0].kind, BuildActionKind::TrainUnit);
+    }
+
+    #[test]
+    fn classify_use_battlegroup_ability_as_train_unit() {
+        let mut gd = data::GameData::new(10612);
+        gd.abilities.insert(
+            2164165,
+            data::Ability {
+                pbgid: 2164165,
+                path: vec!["abilities".into(), "canadian_shock".into()],
+                loc_id: 0,
+                icon_name: String::new(),
+                autobuild: false,
+                builds: None,
+                spawns: vec!["sbps/races/british/infantry/heavy_infantry_canadian_uk".into()],
+                upgrades: vec![],
+                screen_name_formatter: None,
+            },
+        );
+        let mut store = VersionedStore::new();
+        store.add_version(gd);
+        let mut factory = Factory::new(true, 10612, &store);
+        factory.classify_use_battlegroup_ability(10, 0, 2164165);
+        let actions = factory.consolidate();
+        assert_eq!(actions[0].kind, BuildActionKind::TrainUnit);
+        assert_eq!(actions[0].pbgid, 2164165);
+    }
+
+    #[test]
+    fn classify_use_battlegroup_ability_as_research_upgrade() {
+        let mut gd = data::GameData::new(10612);
+        gd.abilities.insert(
+            200,
+            data::Ability {
+                pbgid: 200,
+                path: vec!["abilities".into(), "upgrade_ability".into()],
+                loc_id: 0,
+                icon_name: String::new(),
+                autobuild: false,
+                builds: None,
+                spawns: vec![],
+                upgrades: vec!["upgrade/german/research/global_upgrade".into()],
+                screen_name_formatter: None,
+            },
+        );
+        let mut store = VersionedStore::new();
+        store.add_version(gd);
+        let mut factory = Factory::new(true, 10612, &store);
+        factory.classify_use_battlegroup_ability(10, 0, 200);
+        let actions = factory.consolidate();
+        assert_eq!(actions[0].kind, BuildActionKind::ResearchUpgrade);
     }
 
     #[test]

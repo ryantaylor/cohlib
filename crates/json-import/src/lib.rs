@@ -8,10 +8,6 @@ use serde_json::Value;
 
 use data::{Ability, Entity, GameData, LocaleStore, ScreenNameFormatter, Squad, Upgrade, Version};
 
-/// Ability paths that are autobuilds even if name doesn't contain "auto_build"/"autobuild".
-const AUTOBUILDS: &[&str] =
-    &["abilities/races/american/battlegroups/infantry/infantry_left_2a_medical_tent"];
-
 /// Locale entry types that are included in the locale store.
 const LOCALE_TYPES: &[&str] = &[
     "abilities",
@@ -89,15 +85,13 @@ pub fn import_version(data_dir: &Path, version: Version) -> Result<GameData, Err
 // ---------------------------------------------------------------------------
 
 fn parse_abilities(value: &Value, out: &mut HashMap<u32, Ability>) -> Result<(), Error> {
-    let autobuilds_set: HashSet<&str> = AUTOBUILDS.iter().copied().collect();
-    parse_abilities_subtree(value, &["abilities"], out, &autobuilds_set)
+    parse_abilities_subtree(value, &["abilities"], out)
 }
 
 fn parse_abilities_subtree(
     value: &Value,
     path: &[&str],
     out: &mut HashMap<u32, Ability>,
-    autobuilds_set: &HashSet<&str>,
 ) -> Result<(), Error> {
     let obj = match value.as_object() {
         Some(o) => o,
@@ -106,18 +100,14 @@ fn parse_abilities_subtree(
 
     if obj.contains_key("ability_bag") {
         // Leaf node
-        parse_ability_bag(value, path, out, autobuilds_set)?;
+        parse_ability_bag(value, path, out)?;
     } else {
         for (k, v) in obj {
             let mut new_path: Vec<&str> = path.to_vec();
-            // We need owned strings; use a temporary approach
-            let k_str: &str = k.as_str();
-            new_path.push(k_str);
-            // Recurse — we need to pass the new path as a slice.
-            // Since we need lifetime extension, collect into owned vec and call recursively.
+            new_path.push(k.as_str());
             let owned: Vec<String> = new_path.iter().map(|s| s.to_string()).collect();
             let refs: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
-            parse_abilities_subtree(v, &refs, out, autobuilds_set)?;
+            parse_abilities_subtree(v, &refs, out)?;
         }
     }
 
@@ -128,7 +118,6 @@ fn parse_ability_bag(
     data: &Value,
     path: &[&str],
     out: &mut HashMap<u32, Ability>,
-    autobuilds_set: &HashSet<&str>,
 ) -> Result<(), Error> {
     let pbgid = parse_pbgid(data)?;
 
@@ -152,10 +141,7 @@ fn parse_ability_bag(
         .pointer("/ui_info/screen_name_formatter")
         .and_then(parse_screen_name_formatter);
 
-    let path_str = path.join("/");
-    let autobuild = path.contains(&"auto_build")
-        || path.contains(&"autobuild")
-        || autobuilds_set.contains(path_str.as_str());
+    let autobuild = path.contains(&"auto_build") || path.contains(&"autobuild");
 
     let ability = Ability {
         pbgid,
@@ -164,6 +150,8 @@ fn parse_ability_bag(
         icon_name,
         autobuild,
         builds,
+        spawns: Vec::new(),
+        upgrades: Vec::new(),
         screen_name_formatter,
     };
 

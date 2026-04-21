@@ -2,6 +2,7 @@
 
 use std::{path::PathBuf, process, time::Duration};
 
+use cohlib::{extract_build_order, Replay, VersionedStore};
 use indicatif::{ProgressBar, ProgressStyle};
 
 mod images;
@@ -23,10 +24,12 @@ fn main() {
     match args.get(1).map(|s| s.as_str()) {
         Some("populate") => cmd_populate(&args[2..]),
         Some("import") => cmd_import(&args[2..]),
+        Some("build-order") => cmd_build_order(&args[2..]),
         _ => {
             eprintln!("Usage:");
             eprintln!("  cohlib populate <source_dir>... --output <data_dir>");
             eprintln!("  cohlib import <depot_path> --version <build_number> --output <data_dir> [--images <dir>] [--icons-sga <path>] [--scenarios-sga <path>]");
+            eprintln!("  cohlib build-order <replay_path>");
             process::exit(1);
         }
     }
@@ -304,4 +307,75 @@ fn parse_import_args(args: &[String]) -> (PathBuf, u32, PathBuf, Option<images::
         images_dir: dir,
     });
     (depot_path, version, output_dir, images_config)
+}
+
+fn cmd_build_order(args: &[String]) {
+    let replay_path = match args.first() {
+        Some(p) => PathBuf::from(p),
+        None => {
+            eprintln!("Usage: cohlib build-order <replay_path>");
+            process::exit(1);
+        }
+    };
+
+    let data = std::fs::read(&replay_path).unwrap_or_else(|e| {
+        eprintln!("Error reading replay file: {e}");
+        process::exit(1);
+    });
+
+    let replay = Replay::from_bytes(&data).unwrap_or_else(|e| {
+        eprintln!("Error parsing replay: {e}");
+        process::exit(1);
+    });
+
+    let store = VersionedStore::bundled();
+    println!("Replay version: {}", replay.version());
+    println!("Map: {}", replay.map().filename());
+    println!("------------------------------------------------------------");
+
+    let players = replay.players();
+    for (idx, player) in players.iter().enumerate() {
+        println!(
+            "Player {}: {} ({:?})",
+            idx,
+            player.name(),
+            player.faction()
+        );
+
+        let build_order = match extract_build_order(&replay, idx, &store) {
+            Ok(bo) => bo,
+            Err(e) => {
+                eprintln!("  Error extracting build order: {e}");
+                continue;
+            }
+        };
+
+        for action in build_order.actions {
+            let name = store
+                .local_name_for_formatted(action.pbgid, replay.version() as u32)
+                .unwrap_or_else(|| format!("Unknown ({})", action.pbgid));
+
+            let minutes = action.tick / 8 / 60;
+            let seconds = (action.tick / 8) % 60;
+
+            let mut status = String::new();
+            if action.cancelled {
+                status.push_str(" [CANCELLED]");
+            }
+            if action.suspect {
+                status.push_str(" [SUSPECT]");
+            }
+
+            println!(
+                "  {:02}:{:02}  {:<25}  {:<10}  {}{}",
+                minutes,
+                seconds,
+                format!("{:?}", action.kind),
+                action.pbgid,
+                name,
+                status
+            );
+        }
+        println!();
+    }
 }

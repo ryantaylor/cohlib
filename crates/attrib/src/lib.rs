@@ -30,10 +30,6 @@ use quick_xml::reader::Reader;
 use data::{Ability, Entity, GameData, LocaleStore, Squad, Upgrade, Version};
 use sga::ArchiveEntry;
 
-/// Ability paths that are autobuilds even if name doesn't contain "auto_build"/"autobuild".
-const AUTOBUILDS: &[&str] =
-    &["abilities/races/american/battlegroups/infantry/infantry_left_2a_medical_tent"];
-
 /// Raw parsed entity from a single attribute XML file.
 #[derive(Debug, Clone)]
 pub struct RawEntity {
@@ -135,10 +131,11 @@ pub fn extract_game_data(
                 let autobuild = raw
                     .path
                     .iter()
-                    .any(|s| s == "auto_build" || s == "autobuild")
-                    || AUTOBUILDS.contains(&path_str.as_str());
+                    .any(|s| s == "auto_build" || s == "autobuild");
                 let loc_id = parse_loc_str(raw.fields.get("screen_name"));
                 let icon_name = resolve_icon(&raw.fields, &parent_icons);
+                let spawns: Vec<String> = raw.spawns.iter().map(|s| normalize_sep(s)).collect();
+                let upgrades: Vec<String> = raw.upgrades.iter().map(|s| normalize_sep(s)).collect();
                 game_data.abilities.insert(
                     raw.pbgid,
                     Ability {
@@ -148,6 +145,8 @@ pub fn extract_game_data(
                         icon_name,
                         autobuild,
                         builds,
+                        spawns,
+                        upgrades,
                         screen_name_formatter: raw.screen_name_formatter,
                     },
                 );
@@ -268,9 +267,12 @@ fn derive_path(file_path: &str) -> Vec<String> {
 enum Ctx {
     SpawnItems,
     StandardUpgrades,
+    AbilityExtensions,
+    ActionList,
     RaceList,
     RaceData,
     TechTreeBag,
+    Requirement,
     /// Inside `<template_reference name="screen_name_formatter" value="ui_text_formatter">`.
     ScreenNameFormatter,
     /// Inside `<list name="formatter_arguments">` within a `ScreenNameFormatter`.
@@ -329,10 +331,14 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
                             "spawn_items" => ctx_stack.push(Ctx::SpawnItems),
                             "standard_upgrades" => ctx_stack.push(Ctx::StandardUpgrades),
                             "race_list" => ctx_stack.push(Ctx::RaceList),
+                            "requirement_list" | "requirements" => ctx_stack.push(Ctx::Requirement),
                             "formatter_arguments"
                                 if ctx_stack.last() == Some(&Ctx::ScreenNameFormatter) =>
                             {
                                 ctx_stack.push(Ctx::FormatterArguments)
+                            }
+                            n if n.contains("action") || n.contains("custom_pbgid") => {
+                                ctx_stack.push(Ctx::ActionList)
                             }
                             _ => ctx_stack.push(Ctx::Other),
                         }
@@ -343,6 +349,10 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
                             ctx_stack.push(Ctx::TechTreeBag);
                         } else if name == "race_data" && ctx_stack.last() == Some(&Ctx::RaceList) {
                             ctx_stack.push(Ctx::RaceData);
+                        } else if name.contains("requirement") {
+                            ctx_stack.push(Ctx::Requirement);
+                        } else if name.contains("action") || name.contains("custom_property") {
+                            ctx_stack.push(Ctx::ActionList);
                         } else {
                             ctx_stack.push(Ctx::Other);
                         }
@@ -352,9 +362,60 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
                         let value = get_attr(e, b"value").unwrap_or_default();
                         if name == "screen_name_formatter" && !value.is_empty() {
                             ctx_stack.push(Ctx::ScreenNameFormatter);
+                        } else if value.contains("requirement") {
+                            ctx_stack.push(Ctx::Requirement);
+                        } else if (name == "ability_extensions" || name == "exts")
+                            && value.contains("squad_spawner_ext")
+                        {
+                            ctx_stack.push(Ctx::AbilityExtensions);
+                        } else if name.contains("action")
+                            || value.contains("action")
+                            || name.contains("custom_property")
+                            || value.contains("custom_property")
+                        {
+                            ctx_stack.push(Ctx::ActionList);
                         } else {
                             ctx_stack.push(Ctx::Other);
                         }
+                    }
+                    "instance_reference" => {
+                        if let (Some(name), Some(value)) =
+                            (get_attr(e, b"name"), get_attr(e, b"value"))
+                        {
+                            let ancestor_ctx =
+                                ctx_stack.iter().rev().find(|c| !matches!(c, Ctx::Other));
+
+                            let normalized_val = value.replace('\\', "/");
+                            let is_spawn = normalized_val.contains("sbps/")
+                                || normalized_val.contains("/spawns/")
+                                || normalized_val.contains("call_in_ability");
+                            let is_upgrade = normalized_val.contains("upgrade/");
+
+                            match ancestor_ctx {
+                                Some(Ctx::Requirement) => {}
+                                Some(Ctx::SpawnItems)
+                                | Some(Ctx::AbilityExtensions)
+                                | Some(Ctx::ActionList) => {
+                                    if is_spawn {
+                                        spawns.push(value.clone());
+                                    } else if is_upgrade {
+                                        upgrades.push(value.clone());
+                                    }
+                                }
+                                _ => {
+                                    if is_spawn {
+                                        spawns.push(value.clone());
+                                    } else if is_upgrade && name != "parent_pbg" {
+                                        upgrades.push(value.clone());
+                                    }
+
+                                    if !name.is_empty() {
+                                        fields.entry(name).or_insert(value);
+                                    }
+                                }
+                            }
+                        }
+                        ctx_stack.push(Ctx::Other);
                     }
                     _ => {
                         ctx_stack.push(Ctx::Other);
@@ -439,23 +500,33 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
                         if let (Some(name), Some(value)) =
                             (get_attr(e, b"name"), get_attr(e, b"value"))
                         {
-                            // Walk the stack to find the nearest meaningful context,
-                            // since spawn_item/upgrade groups push Ctx::Other on top.
                             let ancestor_ctx =
                                 ctx_stack.iter().rev().find(|c| !matches!(c, Ctx::Other));
+
+                            let normalized_val = value.replace('\\', "/");
+                            let is_spawn = normalized_val.contains("sbps/")
+                                || normalized_val.contains("spawns/")
+                                || normalized_val.contains("call_in_ability");
+                            let is_upgrade = normalized_val.contains("upgrade/");
+
                             match ancestor_ctx {
-                                Some(Ctx::SpawnItems) => {
-                                    if name == "squad" && !value.is_empty() {
-                                        spawns.push(value);
-                                    }
-                                }
-                                Some(Ctx::StandardUpgrades) => {
-                                    if name == "upgrade" && !value.is_empty() {
-                                        upgrades.push(value);
+                                Some(Ctx::Requirement) => {}
+                                Some(Ctx::SpawnItems)
+                                | Some(Ctx::AbilityExtensions)
+                                | Some(Ctx::ActionList) => {
+                                    if is_spawn {
+                                        spawns.push(value.clone());
+                                    } else if is_upgrade {
+                                        upgrades.push(value.clone());
                                     }
                                 }
                                 _ => {
-                                    // Top-level instance_reference fields (e.g. cursor_ghost_ebp)
+                                    if is_spawn {
+                                        spawns.push(value.clone());
+                                    } else if is_upgrade && name != "parent_pbg" {
+                                        upgrades.push(value.clone());
+                                    }
+
                                     if !name.is_empty() {
                                         fields.entry(name).or_insert(value);
                                     }
