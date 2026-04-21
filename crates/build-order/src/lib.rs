@@ -526,6 +526,56 @@ mod tests {
     }
 
     #[test]
+    fn classify_paradrop_as_train_unit() {
+        let mut gd = data::GameData::new(10612);
+        gd.abilities.insert(
+            2029788,
+            data::Ability {
+                pbgid: 2029788,
+                path: vec!["abilities".into(), "paradrop".into()],
+                loc_id: 0,
+                icon_name: String::new(),
+                autobuild: false,
+                builds: None,
+                spawns: vec!["ai/ai_ability_intents/spawns/air_and_sea_commandos_ability_intent".into()],
+                upgrades: vec![],
+                screen_name_formatter: None,
+            },
+        );
+        let mut store = VersionedStore::new();
+        store.add_version(gd);
+        let mut factory = Factory::new(true, 10612, &store);
+        factory.classify_use_battlegroup_ability(10, 0, 2029788);
+        let actions = factory.consolidate();
+        assert_eq!(actions[0].kind, BuildActionKind::TrainUnit);
+    }
+
+    #[test]
+    fn classify_conversion_as_train_unit() {
+        let mut gd = data::GameData::new(10612);
+        gd.abilities.insert(
+            2166906,
+            data::Ability {
+                pbgid: 2166906,
+                path: vec!["abilities".into(), "conversion".into()],
+                loc_id: 0,
+                icon_name: String::new(),
+                autobuild: false,
+                builds: None,
+                spawns: vec!["sbps/races/german/infantry/sturmpioneer_ger".into()],
+                upgrades: vec![],
+                screen_name_formatter: None,
+            },
+        );
+        let mut store = VersionedStore::new();
+        store.add_version(gd);
+        let mut factory = Factory::new(true, 10612, &store);
+        factory.classify_use_battlegroup_ability(10, 0, 2166906);
+        let actions = factory.consolidate();
+        assert_eq!(actions[0].kind, BuildActionKind::TrainUnit);
+    }
+
+    #[test]
     fn extract_build_order_invalid_player_index() {
         let store = VersionedStore::new();
         let data = include_bytes!("../../cohlib/replays/USvDAK_v10612.rec");

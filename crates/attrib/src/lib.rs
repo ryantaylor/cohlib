@@ -912,6 +912,30 @@ mod tests {
         assert!(entity.screen_name_formatter.is_none());
     }
 
+    #[test]
+    fn parse_ability_xml_with_indirect_spawn() {
+        const PARADROP_XML: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
+<instance version="5" template="abilities">
+  <variant name="default">
+    <group name="ability_bag">
+      <uniqueid name="pbgid" value="2029788" />
+      <instance_reference name="ai_ability_intent" value="ai\ai_ability_intents\spawns\air_and_sea_commandos_ability_intent" />
+      <list name="ability_categories">
+        <instance_reference name="type" value="ability_category\call_in_ability" />
+      </list>
+    </group>
+  </variant>
+</instance>"#;
+        let entity = parse_entity_xml(PARADROP_XML, "instances/abilities/paradrop.xml").unwrap();
+        // Should capture both the intent and the category as "spawns"
+        assert!(entity
+            .spawns
+            .contains(&"ai\\ai_ability_intents\\spawns\\air_and_sea_commandos_ability_intent".to_string()));
+        assert!(entity
+            .spawns
+            .contains(&"ability_category\\call_in_ability".to_string()));
+    }
+
     /// Ability with no icon_name but a parent_pbg that has an icon.
     /// Mirrors strafing_run_p47_us.xml → strafing_run_generic.xml.
     #[test]
