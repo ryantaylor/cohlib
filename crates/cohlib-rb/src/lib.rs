@@ -88,6 +88,8 @@ fn build_action_to_h(ruby: &Ruby, rb_self: &BuildAction) -> RHash {
         .unwrap();
     hash.aset(ruby.to_symbol("pbgid"), rb_self.pbgid).unwrap();
     hash.aset(ruby.to_symbol("suspect"), rb_self.suspect).unwrap();
+    hash.aset(ruby.to_symbol("cancelled"), rb_self.cancelled)
+        .unwrap();
     hash
 }
 
