@@ -205,7 +205,7 @@ impl<'a> Factory<'a> {
 
     fn classify_use_battlegroup_ability(&mut self, tick: u32, index: u32, pbgid: u32) -> bool {
         if let Some(ability) = self.store.get_ability(pbgid, self.version) {
-            if ability.autobuild {
+            if ability.autobuild || ability.builds.is_some() {
                 return self.push_battlegroup(tick, index, pbgid, BuildActionKind::ConstructBuilding);
             } else if !ability.spawns.is_empty() {
                 return self.push_battlegroup(tick, index, pbgid, BuildActionKind::TrainUnit);
@@ -523,6 +523,31 @@ mod tests {
         factory.classify_use_battlegroup_ability(10, 0, 200);
         let actions = factory.consolidate();
         assert_eq!(actions[0].kind, BuildActionKind::ResearchUpgrade);
+    }
+
+    #[test]
+    fn classify_use_battlegroup_ability_with_builds_as_construct_building() {
+        let mut gd = data::GameData::new(10612);
+        gd.abilities.insert(
+            300,
+            data::Ability {
+                pbgid: 300,
+                path: vec!["abilities".into(), "medical_tent".into()],
+                loc_id: 0,
+                icon_name: String::new(),
+                autobuild: false,
+                builds: Some("ebps/races/american/buildings/medical_tent".into()),
+                spawns: vec![],
+                upgrades: vec![],
+                screen_name_formatter: None,
+            },
+        );
+        let mut store = VersionedStore::new();
+        store.add_version(gd);
+        let mut factory = Factory::new(true, 10612, &store);
+        factory.classify_use_battlegroup_ability(10, 0, 300);
+        let actions = factory.consolidate();
+        assert_eq!(actions[0].kind, BuildActionKind::ConstructBuilding);
     }
 
     #[test]
