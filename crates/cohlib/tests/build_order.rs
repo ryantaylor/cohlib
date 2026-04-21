@@ -18,7 +18,7 @@ fn run(player_index: usize) -> Vec<ActionRow> {
     let replay = cohlib::parse_replay(data).expect("parse_replay failed");
     let store = store();
     let bo =
-        extract_build_order(&replay, player_index, &store).expect("extract_build_order failed");
+        extract_build_order(&replay, player_index, &store, true).expect("extract_build_order failed");
     bo.actions
         .iter()
         .map(|a| (a.tick, a.index, a.kind.clone(), a.pbgid, a.suspect, a.cancelled))

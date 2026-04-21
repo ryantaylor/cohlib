@@ -119,8 +119,9 @@ fn versioned_store_extract_build_order(
     rb_self: &VersionedStore,
     rb_replay: &Replay,
     player_index: usize,
+    include_cancelled: bool,
 ) -> Result<BuildOrder, Error> {
-    extract_build_order(rb_replay, player_index, rb_self)
+    extract_build_order(rb_replay, player_index, rb_self, include_cancelled)
         .map_err(|e| Error::new(ruby.exception_runtime_error(), e.to_string()))
 }
 
@@ -210,7 +211,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     store_class.define_singleton_method("bundled", function!(versioned_store_bundled, 0))?;
     store_class.define_method(
         "extract_build_order",
-        method!(versioned_store_extract_build_order, 2),
+        method!(versioned_store_extract_build_order, 3),
     )?;
     store_class.define_method("t", method!(versioned_store_t, 2))?;
     store_class.define_method("localize", method!(versioned_store_localize, 2))?;

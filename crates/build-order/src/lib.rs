@@ -55,10 +55,14 @@ pub struct BuildOrder {
 }
 
 /// Extract the build order for `player_index` from `replay` using game data from `store`.
+///
+/// If `include_cancelled` is `false` (the default), cancelled actions are excluded from the
+/// returned build order.
 pub fn extract_build_order(
     replay: &Replay,
     player_index: usize,
     store: &VersionedStore,
+    include_cancelled: bool,
 ) -> Result<BuildOrder, Error> {
     let version = replay.version() as Version;
     let players = replay.players();
@@ -75,6 +79,10 @@ pub fn extract_build_order(
 
     let mut actions = factory.consolidate();
     rectify_suspects(&mut actions, version, store);
+
+    if !include_cancelled {
+        actions.retain(|a| !a.cancelled);
+    }
 
     Ok(BuildOrder { actions })
 }
@@ -605,7 +613,7 @@ mod tests {
         let store = VersionedStore::new();
         let data = include_bytes!("../../cohlib/replays/USvDAK_v10612.rec");
         let replay = Replay::from_bytes(data).unwrap();
-        let result = extract_build_order(&replay, 99, &store);
+        let result = extract_build_order(&replay, 99, &store, false);
         assert!(result.is_err());
     }
 
@@ -614,7 +622,7 @@ mod tests {
         let store = VersionedStore::bundled();
         let data = include_bytes!("../../cohlib/replays/USvDAK_v10612.rec");
         let replay = Replay::from_bytes(data).unwrap();
-        let build_order = extract_build_order(&replay, 0, &store).unwrap();
+        let build_order = extract_build_order(&replay, 0, &store, false).unwrap();
         // Should have at least some actions
         assert!(!build_order.actions.is_empty());
     }

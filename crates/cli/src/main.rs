@@ -342,7 +342,7 @@ fn cmd_build_order(args: &[String]) {
             player.faction()
         );
 
-        let build_order = match extract_build_order(&replay, idx, &store) {
+        let build_order = match extract_build_order(&replay, idx, &store, true) {
             Ok(bo) => bo,
             Err(e) => {
                 eprintln!("  Error extracting build order: {e}");
