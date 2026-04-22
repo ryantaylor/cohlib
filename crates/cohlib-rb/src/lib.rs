@@ -87,7 +87,7 @@ fn build_action_to_h(ruby: &Ruby, rb_self: &BuildAction) -> RHash {
     hash.aset(ruby.to_symbol("action_type"), build_action_action_type(rb_self))
         .unwrap();
     hash.aset(ruby.to_symbol("pbgid"), rb_self.pbgid).unwrap();
-    hash.aset(ruby.to_symbol("suspect"), rb_self.suspect).unwrap();
+    hash.aset(ruby.to_symbol("suspect_since"), rb_self.suspect_since).unwrap();
     hash.aset(ruby.to_symbol("cancelled"), rb_self.cancelled)
         .unwrap();
     hash
@@ -198,7 +198,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     build_action_class.define_method("index", method!(|a: &BuildAction| a.index, 0))?;
     build_action_class.define_method("action_type", method!(build_action_action_type, 0))?;
     build_action_class.define_method("pbgid", method!(|a: &BuildAction| a.pbgid, 0))?;
-    build_action_class.define_method("suspect", method!(|a: &BuildAction| a.suspect, 0))?;
+    build_action_class.define_method("suspect_since", method!(|a: &BuildAction| a.suspect_since, 0))?;
     build_action_class.define_method("cancelled", method!(|a: &BuildAction| a.cancelled, 0))?;
     build_action_class.define_method("to_h", method!(build_action_to_h, 0))?;
 

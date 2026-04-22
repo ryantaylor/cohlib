@@ -23,8 +23,9 @@ pub struct BuildAction {
     pub kind: BuildActionKind,
     /// The pbgid of the entity/ability/upgrade being built.
     pub pbgid: u32,
-    /// Whether this action is a suspect (building may have been cancelled before use).
-    pub suspect: bool,
+    /// The tick at which this action was marked suspect (cancellation command tick), if suspect.
+    /// A building is suspect if it may have been cancelled before first use.
+    pub suspect_since: Option<u32>,
     /// Whether this action was cancelled.
     pub cancelled: bool,
 }
@@ -94,7 +95,7 @@ struct PendingAction {
     index: u32,
     kind: BuildActionKind,
     pbgid: u32,
-    suspect: bool,
+    suspect_since: Option<u32>,
     cancelled: bool,
 }
 
@@ -105,7 +106,7 @@ impl PendingAction {
             index: self.index,
             kind: self.kind,
             pbgid: self.pbgid,
-            suspect: self.suspect,
+            suspect_since: self.suspect_since,
             cancelled: self.cancelled,
         }
     }
@@ -168,7 +169,7 @@ impl<'a> Factory<'a> {
             Command::UseBattlegroupAbility(data) => {
                 self.classify_use_battlegroup_ability(data.tick(), data.index(), data.pbgid())
             }
-            Command::CancelConstruction(_) => self.cancel_construction(),
+            Command::CancelConstruction(data) => self.cancel_construction(data.tick()),
             Command::CancelProduction(data) => {
                 self.cancel_production(data.source_identifier(), data.queue_index())
             }
@@ -185,7 +186,7 @@ impl<'a> Factory<'a> {
                     index,
                     kind: BuildActionKind::ConstructBuilding,
                     pbgid,
-                    suspect: false,
+                    suspect_since: None,
                     cancelled: false,
                 });
             } else if !ability.spawns.is_empty() {
@@ -194,7 +195,7 @@ impl<'a> Factory<'a> {
                     index,
                     kind: BuildActionKind::TrainUnit,
                     pbgid,
-                    suspect: false,
+                    suspect_since: None,
                     cancelled: false,
                 });
             } else if !ability.upgrades.is_empty() {
@@ -203,7 +204,7 @@ impl<'a> Factory<'a> {
                     index,
                     kind: BuildActionKind::ResearchUpgrade,
                     pbgid,
-                    suspect: false,
+                    suspect_since: None,
                     cancelled: false,
                 });
             }
@@ -241,7 +242,7 @@ impl<'a> Factory<'a> {
                 index,
                 kind,
                 pbgid,
-                suspect: false,
+                suspect_since: None,
                 cancelled: false,
             });
         true
@@ -259,16 +260,23 @@ impl<'a> Factory<'a> {
             index,
             kind,
             pbgid,
-            suspect: false,
+            suspect_since: None,
             cancelled: false,
         });
         true
     }
 
-    fn cancel_construction(&mut self) -> bool {
+    fn cancel_construction(&mut self, tick: u32) -> bool {
         for building in &mut self.buildings {
-            if !building.suspect {
-                building.suspect = true;
+            if building.suspect_since.is_none() {
+                building.suspect_since = Some(tick);
+            }
+        }
+        for building in &mut self.battlegroup {
+            if building.kind == BuildActionKind::ConstructBuilding
+                && building.suspect_since.is_none()
+            {
+                building.suspect_since = Some(tick);
             }
         }
         true
@@ -293,7 +301,7 @@ impl<'a> Factory<'a> {
             index: 0,
             kind: BuildActionKind::AITakeover,
             pbgid: 0,
-            suspect: false,
+            suspect_since: None,
             cancelled: false,
         });
         false
@@ -317,7 +325,7 @@ impl<'a> Factory<'a> {
 fn rectify_suspects(actions: &mut [BuildAction], version: Version, store: &VersionedStore) {
     let n = actions.len();
     for i in 0..n {
-        if !actions[i].suspect {
+        if actions[i].suspect_since.is_none() {
             continue;
         }
         let suspect_pbgid = actions[i].pbgid;
@@ -346,7 +354,7 @@ fn rectify_suspects(actions: &mut [BuildAction], version: Version, store: &Versi
         });
 
         if used {
-            actions[i].suspect = false;
+            actions[i].suspect_since = None;
         }
     }
 }
@@ -387,12 +395,12 @@ mod tests {
             index: 1,
             kind: BuildActionKind::ConstructBuilding,
             pbgid: 42,
-            suspect: true,
+            suspect_since: Some(50),
             cancelled: false,
         };
         assert_eq!(action.tick, 100);
         assert_eq!(action.pbgid, 42);
-        assert!(action.suspect);
+        assert_eq!(action.suspect_since, Some(50));
         assert!(!action.cancelled);
         assert_eq!(action.kind, BuildActionKind::ConstructBuilding);
     }
@@ -450,11 +458,11 @@ mod tests {
             index: 0,
             kind: BuildActionKind::ConstructBuilding,
             pbgid: 42,
-            suspect: false,
+            suspect_since: None,
             cancelled: false,
         });
-        factory.cancel_construction();
-        assert!(factory.buildings[0].suspect);
+        factory.cancel_construction(20);
+        assert_eq!(factory.buildings[0].suspect_since, Some(20));
     }
 
     #[test]

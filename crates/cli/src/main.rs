@@ -362,7 +362,7 @@ fn cmd_build_order(args: &[String]) {
             if action.cancelled {
                 status.push_str(" [CANCELLED]");
             }
-            if action.suspect {
+            if action.suspect_since.is_some() {
                 status.push_str(" [SUSPECT]");
             }
 
