@@ -70,13 +70,13 @@ fn message_to_h(ruby: &Ruby, rb_self: &Message) -> RHash {
 
 fn build_action_action_type(rb_self: &BuildAction) -> String {
     match rb_self.kind {
-        BuildActionKind::ConstructBuilding => "construct_building",
-        BuildActionKind::TrainUnit => "train_unit",
-        BuildActionKind::ResearchUpgrade => "research_upgrade",
-        BuildActionKind::SelectBattlegroup => "select_battlegroup",
-        BuildActionKind::SelectBattlegroupAbility => "select_battlegroup_ability",
-        BuildActionKind::UseBattlegroupAbility => "use_battlegroup_ability",
-        BuildActionKind::AITakeover => "ai_takeover",
+        BuildActionKind::ConstructBuilding => "ConstructBuilding",
+        BuildActionKind::TrainUnit => "TrainUnit",
+        BuildActionKind::ResearchUpgrade => "ResearchUpgrade",
+        BuildActionKind::SelectBattlegroup => "SelectBattlegroup",
+        BuildActionKind::SelectBattlegroupAbility => "SelectBattlegroupAbility",
+        BuildActionKind::UseBattlegroupAbility => "UseBattlegroupAbility",
+        BuildActionKind::AITakeover => "AITakeover",
     }
     .to_owned()
 }
