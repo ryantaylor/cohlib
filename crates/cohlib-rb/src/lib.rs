@@ -134,12 +134,7 @@ fn versioned_store_localize(rb_self: &VersionedStore, loc_id: u32, build: u32) -
 }
 
 fn versioned_store_icon_for(rb_self: &VersionedStore, pbgid: u32, build: u32) -> Option<String> {
-    rb_self
-        .get_entity(pbgid, build)
-        .map(|e| e.icon_name.to_owned())
-        .or_else(|| rb_self.get_squad(pbgid, build).map(|s| s.icon_name.to_owned()))
-        .or_else(|| rb_self.get_upgrade(pbgid, build).map(|u| u.icon_name.to_owned()))
-        .or_else(|| rb_self.get_ability(pbgid, build).map(|a| a.icon_name.to_owned()))
+    rb_self.icon_for(pbgid, build).map(|s| s.to_owned())
 }
 
 // ---------------------------------------------------------------------------

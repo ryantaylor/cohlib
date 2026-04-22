@@ -24,6 +24,10 @@ trait Localizable {
     fn loc_id(&self) -> u32;
 }
 
+trait Iconable {
+    fn icon_name(&self) -> &str;
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Entity {
     pub pbgid: u32,
@@ -37,6 +41,12 @@ pub struct Entity {
 impl Localizable for &Entity {
     fn loc_id(&self) -> u32 {
         self.loc_id
+    }
+}
+
+impl Iconable for &Entity {
+    fn icon_name(&self) -> &str {
+        &self.icon_name
     }
 }
 
@@ -54,6 +64,12 @@ impl Localizable for &Squad {
     }
 }
 
+impl Iconable for &Squad {
+    fn icon_name(&self) -> &str {
+        &self.icon_name
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Upgrade {
     pub pbgid: u32,
@@ -67,6 +83,12 @@ pub struct Upgrade {
 impl Localizable for &Upgrade {
     fn loc_id(&self) -> u32 {
         self.loc_id
+    }
+}
+
+impl Iconable for &Upgrade {
+    fn icon_name(&self) -> &str {
+        &self.icon_name
     }
 }
 
@@ -89,6 +111,12 @@ pub struct Ability {
 impl Localizable for &Ability {
     fn loc_id(&self) -> u32 {
         self.loc_id
+    }
+}
+
+impl Iconable for &Ability {
+    fn icon_name(&self) -> &str {
+        &self.icon_name
     }
 }
 
@@ -234,6 +262,26 @@ impl VersionedStore {
         self.resolve_loc(build, |gd| gd.abilities.get(&pbgid))
     }
 
+    /// Returns entity with a non-empty icon_name for `pbgid` at `build`, with version fallback.
+    pub fn get_iconable_entity(&self, pbgid: u32, build: Version) -> Option<&Entity> {
+        self.resolve_icon(build, |gd| gd.entities.get(&pbgid))
+    }
+
+    /// Returns squad with a non-empty icon_name for `pbgid` at `build`, with version fallback.
+    pub fn get_iconable_squad(&self, pbgid: u32, build: Version) -> Option<&Squad> {
+        self.resolve_icon(build, |gd| gd.squads.get(&pbgid))
+    }
+
+    /// Returns upgrade with a non-empty icon_name for `pbgid` at `build`, with version fallback.
+    pub fn get_iconable_upgrade(&self, pbgid: u32, build: Version) -> Option<&Upgrade> {
+        self.resolve_icon(build, |gd| gd.upgrades.get(&pbgid))
+    }
+
+    /// Returns ability with a non-empty icon_name for `pbgid` at `build`, with version fallback.
+    pub fn get_iconable_ability(&self, pbgid: u32, build: Version) -> Option<&Ability> {
+        self.resolve_icon(build, |gd| gd.abilities.get(&pbgid))
+    }
+
     /// Returns the localized string for `loc_id` at `build`, with version fallback.
     pub fn localize(&self, loc_id: u32, build: Version) -> Option<&str> {
         self.resolve(build, |gd| gd.locale.get(loc_id))
@@ -268,6 +316,16 @@ impl VersionedStore {
             return self.apply_formatter(&fmt, build);
         }
         None
+    }
+
+    /// Returns the icon name for `pbgid` at `build`, skipping versions where the icon is empty,
+    /// with version fallback across all entity types.
+    pub fn icon_for(&self, pbgid: u32, build: Version) -> Option<&str> {
+        self.get_iconable_entity(pbgid, build)
+            .map(|e| e.icon_name.as_str())
+            .or_else(|| self.get_iconable_squad(pbgid, build).map(|s| s.icon_name.as_str()))
+            .or_else(|| self.get_iconable_upgrade(pbgid, build).map(|u| u.icon_name.as_str()))
+            .or_else(|| self.get_iconable_ability(pbgid, build).map(|a| a.icon_name.as_str()))
     }
 
     /// Returns the `screen_name_formatter` for an upgrade at `build`, cloned to
@@ -357,6 +415,33 @@ impl VersionedStore {
         for i in idx..self.versions.len() {
             if let Some(v) = f(&self.versions[i]) {
                 if v.loc_id() == 0 {
+                    continue;
+                }
+                return Some(v);
+            }
+        }
+        None
+    }
+
+    /// Fallback resolution explicitly for icons: skips results that have an empty icon_name.
+    fn resolve_icon<'a, T, F>(&'a self, build: Version, f: F) -> Option<T>
+    where
+        F: Fn(&'a GameData) -> Option<T>,
+        T: Iconable,
+    {
+        let idx = self.versions.partition_point(|g| g.version <= build);
+
+        for i in (0..idx).rev() {
+            if let Some(v) = f(&self.versions[i]) {
+                if v.icon_name().is_empty() {
+                    continue;
+                }
+                return Some(v);
+            }
+        }
+        for i in idx..self.versions.len() {
+            if let Some(v) = f(&self.versions[i]) {
+                if v.icon_name().is_empty() {
                     continue;
                 }
                 return Some(v);
@@ -504,6 +589,61 @@ mod tests {
         assert!(store
             .local_name_for(1, 100)
             .is_some_and(|s| s == "test string"));
+    }
+
+    // ---------------------------------------------------------------------------
+    // icon_for tests
+    // ---------------------------------------------------------------------------
+
+    fn make_gd_with_icon(version: Version, pbgid: u32, icon: &str) -> GameData {
+        let mut gd = GameData::new(version);
+        gd.entities.insert(
+            pbgid,
+            Entity {
+                pbgid,
+                path: vec!["ebps".into(), "test".into()],
+                loc_id: 0,
+                icon_name: icon.to_string(),
+                spawns: vec![],
+                upgrades: vec![],
+            },
+        );
+        gd
+    }
+
+    #[test]
+    fn icon_for_version_match() {
+        let mut store = VersionedStore::new();
+        store.add_version(make_gd_with_icon(100, 1, "icons/tank"));
+        store.add_version(make_gd_with_icon(200, 1, "icons/tank_v2"));
+        store.add_version(make_gd_with_icon(300, 1, "icons/tank_v3"));
+        assert_eq!(store.icon_for(1, 200), Some("icons/tank_v2"));
+    }
+
+    #[test]
+    fn icon_for_version_mismatch_skips_empty() {
+        let mut store = VersionedStore::new();
+        store.add_version(make_gd_with_icon(100, 1, "icons/tank"));
+        store.add_version(make_gd_with_icon(300, 1, ""));
+        // Version 200 → falls back to 100 (nearest older with non-empty icon), skipping 300
+        assert_eq!(store.icon_for(1, 200), Some("icons/tank"));
+    }
+
+    #[test]
+    fn icon_for_version_does_not_exist() {
+        let mut store = VersionedStore::new();
+        store.add_version(make_gd_with_icon(200, 1, ""));
+        store.add_version(make_gd_with_icon(300, 1, "icons/tank"));
+        // Version 100 → no older, 200 is empty so skipped, falls forward to 300
+        assert_eq!(store.icon_for(1, 100), Some("icons/tank"));
+    }
+
+    #[test]
+    fn icon_for_returns_none_when_all_empty() {
+        let mut store = VersionedStore::new();
+        store.add_version(make_gd_with_icon(100, 1, ""));
+        store.add_version(make_gd_with_icon(200, 1, ""));
+        assert_eq!(store.icon_for(1, 200), None);
     }
 
     // ---------------------------------------------------------------------------
