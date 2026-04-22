@@ -116,6 +116,19 @@ pub fn extract_game_data(
         })
         .collect();
 
+    // Build a lookup from normalized path → normalized parent_pbg path.
+    // Used to walk multi-generational inheritance chains when resolving icons.
+    let parent_pbg_map: HashMap<String, String> = raws
+        .iter()
+        .filter_map(|raw| {
+            let parent = raw.fields.get("parent_pbg")?;
+            if parent.is_empty() {
+                return None;
+            }
+            Some((raw.path.join("/"), normalize_sep(parent)))
+        })
+        .collect();
+
     for raw in raws {
         on_entry();
 
@@ -133,7 +146,7 @@ pub fn extract_game_data(
                     .iter()
                     .any(|s| s == "auto_build" || s == "autobuild");
                 let loc_id = parse_loc_str(raw.fields.get("screen_name"));
-                let icon_name = resolve_icon(&raw.fields, &parent_icons);
+                let icon_name = resolve_icon(&raw.fields, &parent_icons, &parent_pbg_map);
                 let spawns: Vec<String> = raw.spawns.iter().map(|s| normalize_sep(s)).collect();
                 let upgrades: Vec<String> = raw.upgrades.iter().map(|s| normalize_sep(s)).collect();
                 game_data.abilities.insert(
@@ -153,7 +166,7 @@ pub fn extract_game_data(
             }
             "ebps" => {
                 let loc_id = parse_loc_str(raw.fields.get("screen_name"));
-                let icon_name = resolve_icon(&raw.fields, &parent_icons);
+                let icon_name = resolve_icon(&raw.fields, &parent_icons, &parent_pbg_map);
                 let spawns: Vec<String> = raw.spawns.iter().map(|s| normalize_sep(s)).collect();
                 let upgrades: Vec<String> = raw.upgrades.iter().map(|s| normalize_sep(s)).collect();
                 game_data.entities.insert(
@@ -170,7 +183,7 @@ pub fn extract_game_data(
             }
             "sbps" => {
                 let loc_id = parse_loc_str(raw.fields.get("screen_name"));
-                let icon_name = resolve_icon(&raw.fields, &parent_icons);
+                let icon_name = resolve_icon(&raw.fields, &parent_icons, &parent_pbg_map);
                 game_data.squads.insert(
                     raw.pbgid,
                     Squad {
@@ -189,7 +202,7 @@ pub fn extract_game_data(
                     // locstring to that of the battlegroup
                     loc_id = parse_loc_str(bg_activators.get(&path_str));
                 }
-                let icon_name = resolve_icon(&raw.fields, &parent_icons);
+                let icon_name = resolve_icon(&raw.fields, &parent_icons, &parent_pbg_map);
                 game_data.upgrades.insert(
                     raw.pbgid,
                     Upgrade {
@@ -218,16 +231,23 @@ fn normalize_sep(s: &str) -> String {
 }
 
 /// Resolves an entity's icon name: uses its own `icon_name` field if non-empty,
-/// otherwise falls back to the icon of the entity referenced by `parent_pbg`.
-fn resolve_icon(fields: &HashMap<String, String>, parent_icons: &HashMap<String, String>) -> String {
+/// otherwise walks the `parent_pbg` chain until an icon is found or the chain is exhausted.
+fn resolve_icon(
+    fields: &HashMap<String, String>,
+    parent_icons: &HashMap<String, String>,
+    parent_pbg_map: &HashMap<String, String>,
+) -> String {
     if let Some(icon) = fields.get("icon_name").filter(|s| !s.is_empty()) {
         return normalize_sep(icon);
     }
-    fields
-        .get("parent_pbg")
-        .map(|p| normalize_sep(p))
-        .and_then(|p| parent_icons.get(&p).cloned())
-        .unwrap_or_default()
+    let mut current = fields.get("parent_pbg").map(|p| normalize_sep(p));
+    while let Some(path) = current {
+        if let Some(icon) = parent_icons.get(&path) {
+            return icon.clone();
+        }
+        current = parent_pbg_map.get(&path).cloned();
+    }
+    String::new()
 }
 
 /// Parses a loc_id from an optional string value (may have "$" prefix or be "0").
@@ -991,6 +1011,84 @@ mod tests {
             parent.icon_name,
             "common/abilities/strafing_run_p47_us",
             "parent's own icon should be unchanged"
+        );
+    }
+
+    /// Three-level chain: double_us → p47_us (no icon) → generic (has icon).
+    /// Mirrors the real strafing_run_p47_double_us → strafing_run_p47_us → strafing_run_generic chain.
+    #[test]
+    fn extract_game_data_ability_inherits_grandparent_icon() {
+        const GRANDPARENT_XML: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
+<instance version="5" template="abilities">
+  <variant name="default">
+    <group name="ability_bag">
+      <uniqueid name="pbgid" value="20001" />
+      <group name="ui_info">
+        <locstring name="screen_name" value="11000001" />
+        <file name="icon_name" value="common\abilities\strafing_run_generic" />
+      </group>
+    </group>
+  </variant>
+</instance>"#;
+
+        // Has a parent_pbg pointing to grandparent, but no icon of its own.
+        const PARENT_XML: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
+<instance version="5" template="abilities">
+  <variant name="default">
+    <group name="ability_bag">
+      <uniqueid name="pbgid" value="20002" />
+      <instance_reference name="parent_pbg" value="abilities\races\common\archetypes\flight\strafing_run_generic" />
+      <group name="ui_info">
+        <locstring name="screen_name" value="11000002" />
+      </group>
+    </group>
+  </variant>
+</instance>"#;
+
+        // Has a parent_pbg pointing to the middle node, no icon of its own.
+        const CHILD_XML: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
+<instance version="5" template="abilities">
+  <variant name="default">
+    <group name="ability_bag">
+      <uniqueid name="pbgid" value="20003" />
+      <instance_reference name="parent_pbg" value="abilities\races\american\aircraft\strafing_run_p47_us" />
+      <group name="ui_info">
+        <locstring name="screen_name" value="11000003" />
+      </group>
+    </group>
+  </variant>
+</instance>"#;
+
+        let entries = vec![
+            ArchiveEntry {
+                path: "instances/abilities/races/common/archetypes/flight/strafing_run_generic.xml"
+                    .to_string(),
+                bytes: GRANDPARENT_XML.to_vec(),
+            },
+            ArchiveEntry {
+                path: "instances/abilities/races/american/aircraft/strafing_run_p47_us.xml"
+                    .to_string(),
+                bytes: PARENT_XML.to_vec(),
+            },
+            ArchiveEntry {
+                path: "instances/abilities/races/american/aircraft/strafing_run_p47_double_us.xml"
+                    .to_string(),
+                bytes: CHILD_XML.to_vec(),
+            },
+        ];
+
+        let gd = extract_game_data(&entries, LocaleStore(Default::default()), 99, || {}).unwrap();
+        let child = gd.abilities.get(&20003).unwrap();
+        assert_eq!(
+            child.icon_name,
+            "common/abilities/strafing_run_generic",
+            "grandchild should inherit grandparent's icon when neither child nor parent have one"
+        );
+        let parent = gd.abilities.get(&20002).unwrap();
+        assert_eq!(
+            parent.icon_name,
+            "common/abilities/strafing_run_generic",
+            "parent should also inherit grandparent's icon"
         );
     }
 
