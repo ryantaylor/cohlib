@@ -489,8 +489,15 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
                             (get_attr(e, b"name"), get_attr(e, b"value"))
                         {
                             if name == "pbgid" && pbgid.is_none() {
-                                if let Ok(v) = value.parse::<f64>() {
-                                    pbgid = Some(v as u32);
+                                // Skip pbgids nested inside requirement blocks — those belong to
+                                // embedded sub-entities (e.g. pass_types inside required_impass)
+                                // rather than the entity being parsed.
+                                let in_requirement =
+                                    ctx_stack.iter().any(|c| c == &Ctx::Requirement);
+                                if !in_requirement {
+                                    if let Ok(v) = value.parse::<f64>() {
+                                        pbgid = Some(v as u32);
+                                    }
                                 }
                             }
                         }
@@ -885,6 +892,42 @@ mod tests {
             br#"<instance template="abilities"><variant name="default"></variant></instance>"#;
         let result = parse_entity_xml(xml, "instances/abilities/test.xml");
         assert!(result.is_err());
+    }
+
+    /// Regression: auto_build_triage_center_us.xml has a nested <uniqueid name="pbgid"> inside
+    /// requirements_target > required_impass > pass_types that appears before the real entity
+    /// pbgid. The parser must skip pbgids inside Requirement contexts.
+    #[test]
+    fn pbgid_nested_in_requirement_is_ignored() {
+        const XML: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
+<instance version="5" template="abilities">
+  <variant name="default">
+    <group name="ability_bag">
+      <group name="ui_info">
+        <locstring name="screen_name" value="11153287" />
+        <file name="icon_name" value="races\american\buildings\triage_center_us" />
+      </group>
+      <list name="requirements_target">
+        <template_reference name="required" value="requirements\required_impass">
+          <template_reference name="impass" value="pass_types">
+            <uniqueid name="pbgid" value="177882" />
+          </template_reference>
+        </template_reference>
+      </list>
+      <instance_reference name="cursor_ghost_ebp" value="ebps\races\american\buildings\defensive\triage_center_us" />
+    </group>
+    <uniqueid name="pbgid" value="177883" />
+  </variant>
+</instance>"#;
+        let entity = parse_entity_xml(
+            XML,
+            "instances/abilities/races/american/auto_build/auto_build_triage_center_us.xml",
+        )
+        .unwrap();
+        assert_eq!(
+            entity.pbgid, 177883,
+            "nested pbgid inside requirements_target must not shadow the entity's own pbgid"
+        );
     }
 
     #[test]

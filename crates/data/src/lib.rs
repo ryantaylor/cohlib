@@ -457,6 +457,82 @@ impl Default for VersionedStore {
     }
 }
 
+/// A named game entity with its pbgid and the build-order action type used to produce it.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct BuildEntry {
+    pub pbgid:       u32,
+    pub name:        String,
+    pub action_type: String,
+    /// Slash-joined attribute path, e.g. `upgrade_tables/americans/squad_upgrades/grenade_package`.
+    /// Useful for distinguishing same-named entities across factions.
+    pub path:        String,
+}
+
+impl VersionedStore {
+    /// Returns all named build-order entities from the latest loaded version.
+    ///
+    /// Covers the three action types tracked by cohdb's build-order classifier:
+    /// - `TrainUnit`          → squads (infantry, vehicles, etc.)
+    /// - `ConstructBuilding`  → buildings/structures (entities)
+    /// - `ResearchUpgrade`    → upgrades
+    ///
+    /// Names are resolved via the locale store bundled with the latest version.
+    /// Entries whose name cannot be resolved are excluded.
+    pub fn all_build_entries(&self) -> Vec<BuildEntry> {
+        let Some(latest) = self.versions.last() else {
+            return Vec::new();
+        };
+        let build = latest.version;
+        let mut entries: Vec<BuildEntry> = Vec::new();
+
+        for (&pbgid, squad) in &latest.squads {
+            if let Some(name) = self.local_name_for(pbgid, build) {
+                let path = squad.path.join("/");
+                entries.push(BuildEntry { pbgid, name: name.to_owned(), action_type: "TrainUnit".to_owned(), path });
+            }
+        }
+        for (&pbgid, entity) in &latest.entities {
+            if let Some(name) = self.local_name_for(pbgid, build) {
+                let path = entity.path.join("/");
+                entries.push(BuildEntry { pbgid, name: name.to_owned(), action_type: "ConstructBuilding".to_owned(), path });
+            }
+        }
+        for (&pbgid, upgrade) in &latest.upgrades {
+            if let Some(name) = self.local_name_for_formatted(pbgid, build)
+                .or_else(|| self.local_name_for(pbgid, build).map(str::to_owned))
+            {
+                let path = upgrade.path.join("/");
+                entries.push(BuildEntry { pbgid, name, action_type: "ResearchUpgrade".to_owned(), path });
+            }
+        }
+        // Construction abilities (autobuild or explicit `builds` target) appear in replay
+        // data as ConstructBuilding commands. They are not entities/squads/upgrades, so
+        // they must be iterated separately here.
+        //
+        // Abilities may not be present in the latest version's data (they can be absent from
+        // newer patches while still appearing in replays). Collect pbgids across ALL versions
+        // and use version-fallback resolution so nothing gets missed.
+        let ability_pbgids: std::collections::HashSet<u32> = self.versions.iter()
+            .flat_map(|gd| gd.abilities.keys().copied())
+            .collect();
+        for pbgid in ability_pbgids {
+            let Some(ability) = self.get_ability(pbgid, build) else { continue };
+            if ability.builds.is_none() {
+                continue;
+            }
+            if let Some(name) = self.local_name_for_formatted(pbgid, build)
+                .or_else(|| self.local_name_for(pbgid, build).map(str::to_owned))
+            {
+                let path = ability.path.join("/");
+                entries.push(BuildEntry { pbgid, name, action_type: "ConstructBuilding".to_owned(), path });
+            }
+        }
+
+        entries.sort();
+        entries
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
