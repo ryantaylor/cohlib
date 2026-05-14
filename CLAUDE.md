@@ -99,6 +99,12 @@ Maintainer tooling only — not needed for library use.
 - `cohlib import <depot_path> --version <build> --output <data_dir> [--images <dir>] [--icons-sga <path>] [--scenarios-sga <path>]` — extract from CoH3 SGA depot
 - `discover` — developer binary for inspecting raw SGA archive contents
 
+**Sample depot** (local Steam installation, SGA archives):
+```
+/Users/ryantaylor/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steamapps/content/app_1677280/depot_1677281/anvil/archives
+```
+This path is also hardcoded in `crates/cli/src/discover.rs` as `DEPOT`. The depot can be used to test attribute extraction and generate attribute XML files for searching and exploring game data (e.g. via `cohlib import` pointing at this depot).
+
 ### Error handling
 
 Each crate has its own `Error` enum. The `cohlib` facade re-exports a top-level `Error` that wraps `replay::Error`, `data::Error`, and `build_order::Error`. Pipeline crates (`sga`, `attrib`, `locale`, `json-import`, `image`) expose their own error types directly. All public functions return `Result<T, Error>` and never panic.

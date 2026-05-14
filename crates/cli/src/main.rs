@@ -24,11 +24,13 @@ fn main() {
     match args.get(1).map(|s| s.as_str()) {
         Some("populate") => cmd_populate(&args[2..]),
         Some("import") => cmd_import(&args[2..]),
+        Some("sort-data") => cmd_sort_data(&args[2..]),
         Some("build-order") => cmd_build_order(&args[2..]),
         _ => {
             eprintln!("Usage:");
             eprintln!("  cohlib populate <source_dir>... --output <data_dir>");
             eprintln!("  cohlib import <depot_path> --version <build_number> --output <data_dir> [--images <dir>] [--icons-sga <path>] [--scenarios-sga <path>]");
+            eprintln!("  cohlib sort-data <data_dir>");
             eprintln!("  cohlib build-order <replay_path>");
             process::exit(1);
         }
@@ -175,12 +177,12 @@ fn cmd_import(args: &[String]) {
             }
             Err(e) => {
                 pb.finish_with_message(format!("Locale: extraction failed: {e}"));
-                data::LocaleStore(std::collections::HashMap::new())
+                data::LocaleStore(std::collections::BTreeMap::new())
             }
         }
     } else {
         eprintln!("LocaleEnglish.sga not found, skipping locale");
-        data::LocaleStore(std::collections::HashMap::new())
+        data::LocaleStore(std::collections::BTreeMap::new())
     };
 
     let pb = ProgressBar::new_spinner();
@@ -307,6 +309,59 @@ fn parse_import_args(args: &[String]) -> (PathBuf, u32, PathBuf, Option<images::
         images_dir: dir,
     });
     (depot_path, version, output_dir, images_config)
+}
+
+/// Re-serialize all game_data.json files in a data directory through the current
+/// data model, producing deterministically-sorted output.
+///
+/// Usage: cohlib sort-data <data_dir>
+fn cmd_sort_data(args: &[String]) {
+    let data_dir = match args.first() {
+        Some(p) => PathBuf::from(p),
+        None => {
+            eprintln!("Usage: cohlib sort-data <data_dir>");
+            process::exit(1);
+        }
+    };
+
+    let entries = match std::fs::read_dir(&data_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("Cannot read {}: {e}", data_dir.display());
+            process::exit(1);
+        }
+    };
+
+    let mut sorted = 0usize;
+    for entry in entries.flatten() {
+        let path = entry.path().join("game_data.json");
+        if !path.exists() {
+            continue;
+        }
+        let text = match std::fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("Cannot read {}: {e}", path.display());
+                continue;
+            }
+        };
+        let gd: data::GameData = match serde_json::from_str(&text) {
+            Ok(g) => g,
+            Err(e) => {
+                eprintln!("Cannot parse {}: {e}", path.display());
+                continue;
+            }
+        };
+        let json = serde_json::to_string_pretty(&gd).expect("serialize failed");
+        if let Err(e) = std::fs::write(&path, json) {
+            eprintln!("Cannot write {}: {e}", path.display());
+            continue;
+        }
+        println!("  sorted {}", path.display());
+        sorted += 1;
+    }
+
+    println!("Done. Sorted {sorted} versions.");
 }
 
 fn cmd_build_order(args: &[String]) {

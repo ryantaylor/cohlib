@@ -2,7 +2,7 @@ mod error;
 pub use error::Error;
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 pub type Version = u32;
@@ -121,7 +121,7 @@ impl Iconable for &Ability {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LocaleStore(pub HashMap<u32, String>);
+pub struct LocaleStore(pub BTreeMap<u32, String>);
 
 impl LocaleStore {
     pub fn get(&self, id: u32) -> Option<&str> {
@@ -132,10 +132,10 @@ impl LocaleStore {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameData {
     pub version: Version,
-    pub entities: HashMap<u32, Entity>,
-    pub squads: HashMap<u32, Squad>,
-    pub upgrades: HashMap<u32, Upgrade>,
-    pub abilities: HashMap<u32, Ability>,
+    pub entities: BTreeMap<u32, Entity>,
+    pub squads: BTreeMap<u32, Squad>,
+    pub upgrades: BTreeMap<u32, Upgrade>,
+    pub abilities: BTreeMap<u32, Ability>,
     pub locale: LocaleStore,
 }
 
@@ -143,11 +143,11 @@ impl GameData {
     pub fn new(version: Version) -> Self {
         Self {
             version,
-            entities: HashMap::new(),
-            squads: HashMap::new(),
-            upgrades: HashMap::new(),
-            abilities: HashMap::new(),
-            locale: LocaleStore(HashMap::new()),
+            entities: BTreeMap::new(),
+            squads: BTreeMap::new(),
+            upgrades: BTreeMap::new(),
+            abilities: BTreeMap::new(),
+            locale: LocaleStore(BTreeMap::new()),
         }
     }
 }
@@ -557,17 +557,17 @@ mod tests {
     #[test]
     fn exact_version_match() {
         let mut store = VersionedStore::new();
-        store.add_version(make_gd(100, 1, 10, LocaleStore(HashMap::new())));
-        store.add_version(make_gd(200, 1, 20, LocaleStore(HashMap::new())));
-        store.add_version(make_gd(300, 1, 30, LocaleStore(HashMap::new())));
+        store.add_version(make_gd(100, 1, 10, LocaleStore(BTreeMap::new())));
+        store.add_version(make_gd(200, 1, 20, LocaleStore(BTreeMap::new())));
+        store.add_version(make_gd(300, 1, 30, LocaleStore(BTreeMap::new())));
         assert_eq!(store.get_entity(1, 200).map(|e| e.loc_id), Some(20));
     }
 
     #[test]
     fn fallback_to_older_version() {
         let mut store = VersionedStore::new();
-        store.add_version(make_gd(100, 1, 10, LocaleStore(HashMap::new())));
-        store.add_version(make_gd(300, 1, 30, LocaleStore(HashMap::new())));
+        store.add_version(make_gd(100, 1, 10, LocaleStore(BTreeMap::new())));
+        store.add_version(make_gd(300, 1, 30, LocaleStore(BTreeMap::new())));
         // Version 200 → falls back to 100 (nearest older)
         assert_eq!(store.get_entity(1, 200).map(|e| e.loc_id), Some(10));
     }
@@ -575,8 +575,8 @@ mod tests {
     #[test]
     fn fallback_to_newer_version() {
         let mut store = VersionedStore::new();
-        store.add_version(make_gd(200, 1, 20, LocaleStore(HashMap::new())));
-        store.add_version(make_gd(300, 1, 30, LocaleStore(HashMap::new())));
+        store.add_version(make_gd(200, 1, 20, LocaleStore(BTreeMap::new())));
+        store.add_version(make_gd(300, 1, 30, LocaleStore(BTreeMap::new())));
         // Version 50 → no older, falls forward to 200
         assert_eq!(store.get_entity(1, 50).map(|e| e.loc_id), Some(20));
     }
@@ -584,15 +584,15 @@ mod tests {
     #[test]
     fn missing_pbgid_returns_none() {
         let mut store = VersionedStore::new();
-        store.add_version(make_gd(100, 1, 10, LocaleStore(HashMap::new())));
+        store.add_version(make_gd(100, 1, 10, LocaleStore(BTreeMap::new())));
         assert_eq!(store.get_entity(999, 100), None);
     }
 
     #[test]
     fn add_version_replaces_existing() {
         let mut store = VersionedStore::new();
-        store.add_version(make_gd(100, 1, 10, LocaleStore(HashMap::new())));
-        store.add_version(make_gd(100, 1, 99, LocaleStore(HashMap::new())));
+        store.add_version(make_gd(100, 1, 10, LocaleStore(BTreeMap::new())));
+        store.add_version(make_gd(100, 1, 99, LocaleStore(BTreeMap::new())));
         assert_eq!(store.version_count(), 1);
         assert_eq!(store.get_entity(1, 100).map(|e| e.loc_id), Some(99));
     }
@@ -608,7 +608,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let v_dir = dir.path().join("10612");
         std::fs::create_dir_all(&v_dir).unwrap();
-        let gd = make_gd(10612, 42, 7, LocaleStore(HashMap::new()));
+        let gd = make_gd(10612, 42, 7, LocaleStore(BTreeMap::new()));
         std::fs::write(
             v_dir.join("game_data.json"),
             serde_json::to_string(&gd).unwrap(),
@@ -631,9 +631,9 @@ mod tests {
     #[test]
     fn local_name_for_version_match() {
         let mut store = VersionedStore::new();
-        let mut locale: HashMap<u32, String> = HashMap::new();
+        let mut locale: BTreeMap<u32, String> = BTreeMap::new();
         locale.insert(30, "test string".to_string());
-        store.add_version(make_gd(200, 1, 0, LocaleStore(HashMap::new())));
+        store.add_version(make_gd(200, 1, 0, LocaleStore(BTreeMap::new())));
         store.add_version(make_gd(300, 1, 30, LocaleStore(locale)));
 
         assert!(store
@@ -644,9 +644,9 @@ mod tests {
     #[test]
     fn local_name_for_version_mismatch() {
         let mut store = VersionedStore::new();
-        let mut locale: HashMap<u32, String> = HashMap::new();
+        let mut locale: BTreeMap<u32, String> = BTreeMap::new();
         locale.insert(30, "test string".to_string());
-        store.add_version(make_gd(200, 1, 0, LocaleStore(HashMap::new())));
+        store.add_version(make_gd(200, 1, 0, LocaleStore(BTreeMap::new())));
         store.add_version(make_gd(300, 1, 30, LocaleStore(locale)));
 
         assert!(store
@@ -657,9 +657,9 @@ mod tests {
     #[test]
     fn local_name_for_version_does_not_exist() {
         let mut store = VersionedStore::new();
-        let mut locale: HashMap<u32, String> = HashMap::new();
+        let mut locale: BTreeMap<u32, String> = BTreeMap::new();
         locale.insert(30, "test string".to_string());
-        store.add_version(make_gd(200, 1, 0, LocaleStore(HashMap::new())));
+        store.add_version(make_gd(200, 1, 0, LocaleStore(BTreeMap::new())));
         store.add_version(make_gd(300, 1, 30, LocaleStore(locale)));
 
         assert!(store
@@ -754,7 +754,7 @@ mod tests {
     #[test]
     fn local_name_for_formatted_uses_formatter_when_loc_id_zero() {
         let mut store = VersionedStore::new();
-        let mut locale = HashMap::new();
+        let mut locale = BTreeMap::new();
         locale.insert(100, "Hello %1%".to_string());
         locale.insert(200, "World".to_string());
         store.add_version(make_gd_with_upgrade_formatter(
@@ -773,7 +773,7 @@ mod tests {
     #[test]
     fn local_name_for_formatted_prefers_direct_loc_id() {
         let mut store = VersionedStore::new();
-        let mut locale = HashMap::new();
+        let mut locale = BTreeMap::new();
         locale.insert(10, "Direct Name".to_string());
         locale.insert(100, "Formatter Template %1%".to_string());
         locale.insert(200, "Arg".to_string());
@@ -803,14 +803,14 @@ mod tests {
     #[test]
     fn local_name_for_formatted_returns_none_if_neither() {
         let mut store = VersionedStore::new();
-        store.add_version(make_gd(300, 42, 0, LocaleStore(HashMap::new())));
+        store.add_version(make_gd(300, 42, 0, LocaleStore(BTreeMap::new())));
         assert_eq!(store.local_name_for_formatted(42, 300), None);
     }
 
     #[test]
     fn apply_formatter_substitutes_single_arg() {
         let mut store = VersionedStore::new();
-        let mut locale = HashMap::new();
+        let mut locale = BTreeMap::new();
         locale.insert(1, "Unlock %1% Production".to_string());
         locale.insert(2, "Sherman Easy Eight".to_string());
         store.add_version(make_gd_with_upgrade_formatter(
@@ -829,7 +829,7 @@ mod tests {
     #[test]
     fn apply_formatter_substitutes_multiple_args() {
         let mut store = VersionedStore::new();
-        let mut locale = HashMap::new();
+        let mut locale = BTreeMap::new();
         locale.insert(1, "Allows the %1% to be produced from the %2%.".to_string());
         locale.insert(2, "Sherman Easy Eight".to_string());
         locale.insert(3, "Tank Depot".to_string());
@@ -850,7 +850,7 @@ mod tests {
     fn apply_formatter_returns_none_if_template_missing() {
         let mut store = VersionedStore::new();
         // Locale has arg but NOT the template.
-        let mut locale = HashMap::new();
+        let mut locale = BTreeMap::new();
         locale.insert(2, "Arg Value".to_string());
         store.add_version(make_gd_with_upgrade_formatter(
             100,

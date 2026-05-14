@@ -1,7 +1,7 @@
 mod error;
 pub use error::Error;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
 use serde_json::Value;
@@ -84,14 +84,14 @@ pub fn import_version(data_dir: &Path, version: Version) -> Result<GameData, Err
 // abilities.json
 // ---------------------------------------------------------------------------
 
-fn parse_abilities(value: &Value, out: &mut HashMap<u32, Ability>) -> Result<(), Error> {
+fn parse_abilities(value: &Value, out: &mut BTreeMap<u32, Ability>) -> Result<(), Error> {
     parse_abilities_subtree(value, &["abilities"], out)
 }
 
 fn parse_abilities_subtree(
     value: &Value,
     path: &[&str],
-    out: &mut HashMap<u32, Ability>,
+    out: &mut BTreeMap<u32, Ability>,
 ) -> Result<(), Error> {
     let obj = match value.as_object() {
         Some(o) => o,
@@ -117,7 +117,7 @@ fn parse_abilities_subtree(
 fn parse_ability_bag(
     data: &Value,
     path: &[&str],
-    out: &mut HashMap<u32, Ability>,
+    out: &mut BTreeMap<u32, Ability>,
 ) -> Result<(), Error> {
     let pbgid = parse_pbgid(data)?;
 
@@ -163,14 +163,14 @@ fn parse_ability_bag(
 // ebps.json
 // ---------------------------------------------------------------------------
 
-fn parse_ebps(value: &Value, out: &mut HashMap<u32, Entity>) -> Result<(), Error> {
+fn parse_ebps(value: &Value, out: &mut BTreeMap<u32, Entity>) -> Result<(), Error> {
     parse_ebps_subtree(value, &["ebps"], out)
 }
 
 fn parse_ebps_subtree(
     value: &Value,
     path: &[&str],
-    out: &mut HashMap<u32, Entity>,
+    out: &mut BTreeMap<u32, Entity>,
 ) -> Result<(), Error> {
     let obj = match value.as_object() {
         Some(o) => o,
@@ -194,7 +194,7 @@ fn parse_ebps_subtree(
 fn parse_entity_leaf(
     data: &Value,
     path: &[&str],
-    out: &mut HashMap<u32, Entity>,
+    out: &mut BTreeMap<u32, Entity>,
 ) -> Result<(), Error> {
     let pbgid = parse_pbgid(data)?;
 
@@ -267,14 +267,14 @@ fn parse_entity_leaf(
 // sbps.json
 // ---------------------------------------------------------------------------
 
-fn parse_sbps(value: &Value, out: &mut HashMap<u32, Squad>) -> Result<(), Error> {
+fn parse_sbps(value: &Value, out: &mut BTreeMap<u32, Squad>) -> Result<(), Error> {
     parse_sbps_subtree(value, &["sbps"], out)
 }
 
 fn parse_sbps_subtree(
     value: &Value,
     path: &[&str],
-    out: &mut HashMap<u32, Squad>,
+    out: &mut BTreeMap<u32, Squad>,
 ) -> Result<(), Error> {
     let obj = match value.as_object() {
         Some(o) => o,
@@ -298,7 +298,7 @@ fn parse_sbps_subtree(
 fn parse_squad_leaf(
     data: &Value,
     path: &[&str],
-    out: &mut HashMap<u32, Squad>,
+    out: &mut BTreeMap<u32, Squad>,
 ) -> Result<(), Error> {
     let pbgid = parse_pbgid(data)?;
 
@@ -349,14 +349,14 @@ fn parse_squad_leaf(
 // upgrade.json
 // ---------------------------------------------------------------------------
 
-fn parse_upgrades(value: &Value, out: &mut HashMap<u32, Upgrade>) -> Result<(), Error> {
+fn parse_upgrades(value: &Value, out: &mut BTreeMap<u32, Upgrade>) -> Result<(), Error> {
     parse_upgrades_subtree(value, &["upgrade"], out)
 }
 
 fn parse_upgrades_subtree(
     value: &Value,
     path: &[&str],
-    out: &mut HashMap<u32, Upgrade>,
+    out: &mut BTreeMap<u32, Upgrade>,
 ) -> Result<(), Error> {
     let obj = match value.as_object() {
         Some(o) => o,
@@ -380,7 +380,7 @@ fn parse_upgrades_subtree(
 fn parse_upgrade_leaf(
     data: &Value,
     path: &[&str],
-    out: &mut HashMap<u32, Upgrade>,
+    out: &mut BTreeMap<u32, Upgrade>,
 ) -> Result<(), Error> {
     let pbgid = parse_pbgid(data)?;
 
@@ -451,7 +451,7 @@ fn parse_locale_json(value: &Value) -> Result<LocaleStore, Error> {
         .as_object()
         .ok_or_else(|| Error::JsonImport("locale.json root is not an object".into()))?;
 
-    let mut map = HashMap::new();
+    let mut map = BTreeMap::new();
     for (k, v) in obj {
         if let Ok(id) = k.parse::<u32>() {
             if let Some(s) = v.as_str() {
@@ -469,7 +469,7 @@ fn parse_locale_json(value: &Value) -> Result<LocaleStore, Error> {
 
 fn parse_locale_txt(text: &str) -> Result<LocaleStore, Error> {
     let valid_types: HashSet<&str> = LOCALE_TYPES.iter().copied().collect();
-    let mut map = HashMap::new();
+    let mut map = BTreeMap::new();
 
     for line in text.lines() {
         let parts: Vec<&str> = line.splitn(5, '\t').collect();
@@ -530,7 +530,7 @@ mod tests {
         let text = std::fs::read_to_string(&path).expect("abilities.json not found");
         let value: Value = serde_json::from_str(&text).expect("parse JSON");
 
-        let mut abilities: HashMap<u32, Ability> = HashMap::new();
+        let mut abilities: BTreeMap<u32, Ability> = BTreeMap::new();
         parse_abilities(&value, &mut abilities).expect("parse abilities");
 
         assert!(
@@ -561,7 +561,7 @@ mod tests {
         let text = std::fs::read_to_string(&path).expect("ebps.json not found");
         let value: Value = serde_json::from_str(&text).expect("parse JSON");
 
-        let mut entities: HashMap<u32, Entity> = HashMap::new();
+        let mut entities: BTreeMap<u32, Entity> = BTreeMap::new();
         parse_ebps(&value, &mut entities).expect("parse ebps");
 
         assert!(
@@ -595,7 +595,7 @@ mod tests {
         let text = std::fs::read_to_string(&path).expect("sbps.json not found");
         let value: Value = serde_json::from_str(&text).expect("parse JSON");
 
-        let mut squads: HashMap<u32, Squad> = HashMap::new();
+        let mut squads: BTreeMap<u32, Squad> = BTreeMap::new();
         parse_sbps(&value, &mut squads).expect("parse sbps");
 
         assert!(!squads.is_empty(), "should have parsed at least one squad");
@@ -618,7 +618,7 @@ mod tests {
         let text = std::fs::read_to_string(&path).expect("upgrade.json not found");
         let value: Value = serde_json::from_str(&text).expect("parse JSON");
 
-        let mut upgrades: HashMap<u32, Upgrade> = HashMap::new();
+        let mut upgrades: BTreeMap<u32, Upgrade> = BTreeMap::new();
         parse_upgrades(&value, &mut upgrades).expect("parse upgrades");
 
         assert!(
@@ -757,7 +757,7 @@ mod tests {
         let text = std::fs::read_to_string(&path).expect("upgrade.json not found");
         let value: Value = serde_json::from_str(&text).expect("parse JSON");
 
-        let mut upgrades: HashMap<u32, Upgrade> = HashMap::new();
+        let mut upgrades: BTreeMap<u32, Upgrade> = BTreeMap::new();
         parse_upgrades(&value, &mut upgrades).expect("parse upgrades");
 
         // armored_right_3_sherman_easy_8_production_unlock_us: pbgid=2160077

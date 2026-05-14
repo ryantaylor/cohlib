@@ -12,7 +12,7 @@ mod error;
 pub use error::Error;
 
 use data::LocaleStore;
-use std::{collections::HashMap, path::Path};
+use std::{collections::BTreeMap, path::Path};
 
 /// AES-128 master key for CoH3 locale SGA archives.
 ///
@@ -228,7 +228,7 @@ fn decode_ucs_bytes(bytes: &[u8]) -> Result<String, Error> {
 /// separated by a tab character, with an optional leading `$` on the ID.
 /// Lines that don't match this structure are silently skipped.
 pub fn parse_locale_ucs(text: &str) -> Result<LocaleStore, Error> {
-    let mut map: HashMap<u32, String> = HashMap::new();
+    let mut map: BTreeMap<u32, String> = BTreeMap::new();
     for line in text.lines() {
         let line = line.trim_start_matches('\u{feff}'); // strip UTF-8 BOM on first line
         let Some((id_part, string_part)) = line.split_once('\t') else {
@@ -258,7 +258,7 @@ const LOCALE_TYPES: &[&str] = &[
 /// Each line has the format: `type\tsubject\tlabel\t$id\tstring`
 /// Lines with unrecognized type or missing fields are silently skipped.
 pub fn parse_locale_txt(text: &str) -> Result<LocaleStore, Error> {
-    let mut map: HashMap<u32, String> = HashMap::new();
+    let mut map: BTreeMap<u32, String> = BTreeMap::new();
 
     for line in text.lines() {
         let parts: Vec<&str> = line.splitn(5, '\t').collect();
@@ -292,7 +292,7 @@ pub fn parse_locale_json(json: &str) -> Result<LocaleStore, Error> {
         .as_object()
         .ok_or_else(|| Error::Locale("locale JSON must be an object".into()))?;
 
-    let mut map: HashMap<u32, String> = HashMap::new();
+    let mut map: BTreeMap<u32, String> = BTreeMap::new();
 
     for (key, val) in obj {
         let id_str = key.trim_start_matches('$');
