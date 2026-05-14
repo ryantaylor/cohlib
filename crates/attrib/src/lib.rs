@@ -930,6 +930,75 @@ mod tests {
         );
     }
 
+    /// Regression: 2.4.0 battlegroup ability XMLs have both `<list name="requirements">` and
+    /// `<list name="requirements_target">` inside ability_bag, plus formatter template_references
+    /// in ui_info. The variant-level pbgid must still be captured, not the nested pass_types one.
+    #[test]
+    fn battlegroup_ability_captures_variant_level_pbgid() {
+        const XML: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
+<instance version="5" description="" template="abilities">
+  <variant name="default">
+    <group name="ability_bag">
+      <group name="ui_info">
+        <file name="icon_name" value="races\german\buildings\bunker_mortar_autobuild_ger" overrideParent="True" />
+        <locstring name="screen_name" value="11272942" overrideParent="True" />
+        <locstring name="brief_text" value="0" overrideParent="True" />
+        <template_reference name="brief_text_formatter" value="ui_text_formatter" overrideParent="True">
+          <locstring name="formatter" value="11272941" overrideParent="True" />
+          <list name="formatter_arguments">
+            <locstring name="locstring_value" value="11272943" overrideParent="True" List.ItemID="-1573646689" />
+          </list>
+        </template_reference>
+        <locstring name="help_text" value="11271919" overrideParent="True" />
+        <template_reference name="extra_text_formatter" value="ui_text_formatter" overrideParent="True">
+          <locstring name="formatter" value="11265909" overrideParent="True" />
+          <list name="formatter_arguments">
+            <locstring name="locstring_value" value="11264968" overrideParent="True" List.ItemID="175669001" />
+          </list>
+        </template_reference>
+      </group>
+      <list name="requirements">
+        <template_reference name="required" value="requirements\required_player_upgrade" List.ItemID="553073728" List.ListAction="Append">
+          <bool name="include_completed" value="True" />
+          <group name="include_pbg_parenting">
+            <bool name="include_child_pbgs" value="False" />
+            <bool name="include_parent_pbgs" value="False" />
+          </group>
+          <bool name="include_queued" value="False" />
+          <bool name="is_present" value="True" />
+          <instance_reference name="upgrade_name" value="upgrade\german\battlegroups\siegebreakers\siegebreakers_siege_camp_ger" overrideParent="True" />
+        </template_reference>
+      </list>
+      <list name="requirements_target" overrideParent="True">
+        <template_reference name="required" value="requirements\required_impass" List.ItemID="1866999028" List.ParentItemID="1866999028">
+          <locstring name="ui_name" value="11270282" overrideParent="True" />
+          <template_reference name="impass" value="pass_types">
+            <uniqueid name="pbgid" value="2169235" />
+          </template_reference>
+        </template_reference>
+      </list>
+      <instance_reference name="cursor_ghost_ebp" value="ebps\races\german\buildings\defensive\bunker_mortar_ger" overrideParent="True" />
+    </group>
+    <uniqueid name="pbgid" value="2169222" />
+    <instance_reference name="parent_pbg" value="abilities\races\common\archetypes\player\player_spawn_building_at_location" />
+  </variant>
+</instance>"#;
+        let entity = parse_entity_xml(
+            XML,
+            "instances/abilities/races/german/battlegroups/siegebreakers/siegebreakers_siege_camp_spawn_ger.xml",
+        )
+        .unwrap();
+        assert_eq!(
+            entity.pbgid, 2169222,
+            "variant-level pbgid must be captured, not the nested pass_types pbgid"
+        );
+        assert_eq!(entity.fields.get("screen_name").map(|s| s.as_str()), Some("11272942"));
+        assert_eq!(
+            entity.fields.get("icon_name").map(|s| s.as_str()),
+            Some("races\\german\\buildings\\bunker_mortar_autobuild_ger")
+        );
+    }
+
     #[test]
     fn extract_game_data_abilities() {
         let entry = ArchiveEntry {
