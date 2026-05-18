@@ -1,0 +1,163 @@
+name: Update Game Data
+
+# Triggered manually when a new CoH3 patch is released.
+# Downloads only the required depot files (~2.1 GB of a 30 GB depot),
+# imports the new game data, commits it, creates a GitHub release with
+# the image archives, and dispatches an update event to cohlib-rb.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # DepotDownloader is a .NET application.
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0'
+
+      - name: Install DepotDownloader
+        run: |
+          LATEST_TAG=$(curl -sL https://api.github.com/repos/SteamRE/DepotDownloader/releases/latest \
+            | jq -r '.tag_name')
+          curl -sL \
+            "https://github.com/SteamRE/DepotDownloader/releases/download/${LATEST_TAG}/DepotDownloader-linux-x64.zip" \
+            -o DepotDownloader.zip
+          unzip -q DepotDownloader.zip -d depotdownloader/
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build cohlib CLI
+        run: cargo build --release --bin cohlib
+
+      # Download only the five files needed for import (~2.1 GB total):
+      #   RelicCoH3.exe            143 MB  version number extraction
+      #   ReferenceAttributes.sga   29 MB  entity/squad/ability/upgrade XML
+      #   LocaleEnglish.sga        859 KB  localised display names
+      #   UI.sga                   935 MB  icon textures
+      #   ScenariosMP.sga            1 GB  map minimap textures
+      - name: Download depot files
+        env:
+          STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
+          STEAM_PASSWORD: ${{ secrets.STEAM_PASSWORD }}
+        run: |
+          printf '%s\n' \
+            'RelicCoH3.exe' \
+            'anvil/archives/ReferenceAttributes.sga' \
+            'anvil/archives/LocaleEnglish.sga' \
+            'anvil/archives/UI.sga' \
+            'anvil/archives/ScenariosMP.sga' \
+            > filelist.txt
+          dotnet depotdownloader/DepotDownloader.dll \
+            -app 1677280 -depot 1677281 \
+            -username "$STEAM_USERNAME" \
+            -password "$STEAM_PASSWORD" \
+            -filelist filelist.txt \
+            -dir depot/
+
+      # Extract the build number from RelicCoH3.exe by parsing VS_FIXEDFILEINFO
+      # in the PE version resource — the same logic as read_exe_version() in
+      # crates/cli/src/main.rs. If the version already exists in data/, skip
+      # the rest of the workflow.
+      - name: Check version
+        id: version
+        run: |
+          cat > /tmp/get_version.py << 'EOF'
+          import struct, sys
+          data = open('depot/RelicCoH3.exe', 'rb').read()
+          magic = b'V\x00S\x00_\x00V\x00E\x00R\x00S\x00I\x00O\x00N\x00_\x00I\x00N\x00F\x00O\x00'
+          pos = data.find(magic)
+          if pos == -1:
+              sys.exit('VS_VERSION_INFO not found in RelicCoH3.exe')
+          after = pos + len(magic) + 2
+          aligned = (after + 3) & ~3
+          sig = b'\xBD\x04\xEF\xFE'
+          search = data[aligned:aligned + 64]
+          sig_pos = search.find(sig)
+          if sig_pos == -1:
+              sys.exit('VS_FIXEDFILEINFO signature not found in RelicCoH3.exe')
+          offset = aligned + sig_pos + 20
+          val = struct.unpack_from('<I', data, offset)[0]
+          print(val >> 16)
+          EOF
+          VERSION=$(python3 /tmp/get_version.py)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ -f "data/$VERSION/game_data.json" ]; then
+            echo "is_new=false" >> "$GITHUB_OUTPUT"
+            echo "Version $VERSION already exists — nothing to do."
+          else
+            echo "is_new=true" >> "$GITHUB_OUTPUT"
+            echo "New version detected: $VERSION"
+          fi
+
+      # Run the full import: extracts entity data, locale, and all images.
+      # Writes:
+      #   data/<version>/game_data.json       (committed to repo)
+      #   images/<version>/hashes.json        (committed to repo)
+      #   images/<version>/manifest.json      (release artifact)
+      #   images/<version>/full.tar.gz        (release artifact)
+      #   images/<version>/delta.tar.gz       (release artifact)
+      - name: Run import
+        if: steps.version.outputs.is_new == 'true'
+        run: |
+          ./target/release/cohlib import depot/ --output data/ --images images/
+
+      - name: Commit and push
+        if: steps.version.outputs.is_new == 'true'
+        id: commit
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "data/$VERSION/" "images/$VERSION/hashes.json"
+          git commit -m "Game data for version $VERSION"
+          git push origin main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        if: steps.version.outputs.is_new == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --notes "Automated import of CoH3 game data for build $VERSION." \
+            "images/$VERSION/manifest.json" \
+            "images/$VERSION/full.tar.gz" \
+            "images/$VERSION/delta.tar.gz"
+
+      # Pushes made with GITHUB_TOKEN do not trigger other workflows, so we
+      # dispatch to cohlib-rb explicitly instead of relying on notify-cohlib-rb.yml.
+      - name: Notify cohlib-rb
+        if: steps.version.outputs.is_new == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.COHLIB_RB_DISPATCH_TOKEN }}
+          script: |
+            await github.rest.repos.createDispatchEvent({
+              owner: 'ryantaylor',
+              repo: 'cohlib-rb',
+              event_type: 'cohlib-updated',
+              client_payload: {
+                sha: '${{ steps.commit.outputs.sha }}',
+                ref: 'refs/heads/main',
+              },
+            });
