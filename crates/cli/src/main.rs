@@ -1,6 +1,6 @@
 //! cohlib CLI — maintainer tooling for managing the bundled game data.
 
-use std::{path::PathBuf, process, time::Duration};
+use std::{path::{Path, PathBuf}, process, time::Duration};
 
 use cohlib::{extract_build_order, Replay, VersionedStore};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -29,7 +29,7 @@ fn main() {
         _ => {
             eprintln!("Usage:");
             eprintln!("  cohlib populate <source_dir>... --output <data_dir>");
-            eprintln!("  cohlib import <depot_path> --version <build_number> --output <data_dir> [--images <dir>] [--icons-sga <path>] [--scenarios-sga <path>]");
+            eprintln!("  cohlib import <depot_path> [--version <build_number>] --output <data_dir> [--images <dir>] [--icons-sga <path>] [--scenarios-sga <path>]");
             eprintln!("  cohlib sort-data <data_dir>");
             eprintln!("  cohlib build-order <replay_path>");
             process::exit(1);
@@ -140,7 +140,7 @@ fn parse_populate_args(args: &[String]) -> (Vec<PathBuf>, PathBuf) {
 /// whose key is not available statically). Use `cohlib populate` to include locale
 /// from pre-processed JSON files.
 ///
-/// Usage: cohlib import <depot_path> --version <build_number> --output <data_dir>
+/// Usage: cohlib import <depot_path> [--version <build_number>] --output <data_dir>
 fn cmd_import(args: &[String]) {
     let (depot_path, version, output_dir, images_config) = parse_import_args(args);
 
@@ -248,6 +248,47 @@ fn cmd_import(args: &[String]) {
     }
 }
 
+fn read_exe_version(exe_path: &Path) -> Result<u32, String> {
+    let bytes = std::fs::read(exe_path)
+        .map_err(|e| format!("cannot read {}: {e}", exe_path.display()))?;
+
+    // "VS_VERSION_INFO" as UTF-16 LE
+    const MAGIC: &[u8] = b"V\x00S\x00_\x00V\x00E\x00R\x00S\x00I\x00O\x00N\x00_\x00I\x00N\x00F\x00O\x00";
+    let magic_pos = bytes
+        .windows(MAGIC.len())
+        .position(|w| w == MAGIC)
+        .ok_or_else(|| "VS_VERSION_INFO signature not found in PE file".to_string())?;
+
+    // Skip magic (15 UTF-16 chars = 30 bytes) + null terminator (2 bytes), then align to 4
+    let after_magic = magic_pos + MAGIC.len() + 2;
+    let aligned = (after_magic + 3) & !3;
+
+    // Locate VS_FIXEDFILEINFO by its signature 0xFEEF04BD
+    const FIXEDINFO_SIG: &[u8] = &[0xBD, 0x04, 0xEF, 0xFE];
+    let search_end = (aligned + 64).min(bytes.len().saturating_sub(24));
+    let sig_pos = bytes[aligned..search_end]
+        .windows(FIXEDINFO_SIG.len())
+        .position(|w| w == FIXEDINFO_SIG)
+        .map(|p| aligned + p)
+        .ok_or_else(|| "VS_FIXEDFILEINFO signature not found".to_string())?;
+
+    if sig_pos + 24 > bytes.len() {
+        return Err("PE file truncated before end of VS_FIXEDFILEINFO".to_string());
+    }
+
+    // VS_FIXEDFILEINFO layout (u32, LE):
+    //  +0  dwSignature
+    //  +4  dwStrucVersion
+    //  +8  dwFileVersionMS
+    //  +12 dwFileVersionLS
+    //  +16 dwProductVersionMS = (major << 16) | minor
+    //  +20 dwProductVersionLS = (build << 16) | revision  <- build number
+    let product_version_ls = u32::from_le_bytes(
+        bytes[sig_pos + 20..sig_pos + 24].try_into().expect("4 bytes"),
+    );
+    Ok(product_version_ls >> 16)
+}
+
 fn parse_import_args(args: &[String]) -> (PathBuf, u32, PathBuf, Option<images::ImagesConfig>) {
     let mut depot_path = None;
     let mut version = None;
@@ -289,10 +330,26 @@ fn parse_import_args(args: &[String]) -> (PathBuf, u32, PathBuf, Option<images::
         eprintln!("<depot_path> is required");
         process::exit(1);
     });
-    let version = version.unwrap_or_else(|| {
-        eprintln!("--version <build_number> is required");
-        process::exit(1);
-    });
+    let version = match version {
+        Some(v) => v,
+        None => {
+            let exe_path = depot_path.join("RelicCoH3.exe");
+            match read_exe_version(&exe_path) {
+                Ok(v) => {
+                    eprintln!("auto-detected version {v} from {}", exe_path.display());
+                    v
+                }
+                Err(e) => {
+                    eprintln!(
+                        "error: --version not provided and could not auto-detect from {}: {e}",
+                        exe_path.display()
+                    );
+                    eprintln!("hint: pass --version <build_number> explicitly");
+                    process::exit(1);
+                }
+            }
+        }
+    };
     let output_dir = output_dir.unwrap_or_else(|| {
         eprintln!("--output <data_dir> is required");
         process::exit(1);
