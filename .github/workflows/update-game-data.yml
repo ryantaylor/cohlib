@@ -22,12 +22,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # DepotDownloader is a .NET application.
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0'
-
       - name: Install DepotDownloader
         run: |
           LATEST_TAG=$(curl -sL https://api.github.com/repos/SteamRE/DepotDownloader/releases/latest \
@@ -36,6 +30,7 @@ jobs:
             "https://github.com/SteamRE/DepotDownloader/releases/download/${LATEST_TAG}/DepotDownloader-linux-x64.zip" \
             -o DepotDownloader.zip
           unzip -q DepotDownloader.zip -d depotdownloader/
+          chmod +x depotdownloader/DepotDownloader
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -64,7 +59,7 @@ jobs:
             'anvil/archives/UI.sga' \
             'anvil/archives/ScenariosMP.sga' \
             > filelist.txt
-          dotnet depotdownloader/DepotDownloader.dll \
+          depotdownloader/DepotDownloader \
             -app 1677280 -depot 1677281 \
             -username "$STEAM_USERNAME" \
             -password "$STEAM_PASSWORD" \
