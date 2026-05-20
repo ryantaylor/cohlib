@@ -25,4 +25,6 @@ data        = { workspace = true }
 flate2      = { workspace = true }
 tar         = { workspace = true }
 sha2        = { workspace = true }
+md-5        = { workspace = true }
+crc32fast   = { workspace = true }
 indicatif   = { workspace = true }

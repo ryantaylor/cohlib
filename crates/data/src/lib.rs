@@ -137,6 +137,8 @@ pub struct GameData {
     pub upgrades: BTreeMap<u32, Upgrade>,
     pub abilities: BTreeMap<u32, Ability>,
     pub locale: LocaleStore,
+    #[serde(default)]
+    pub data_checksum: Option<i32>,
 }
 
 impl GameData {
@@ -148,6 +150,7 @@ impl GameData {
             upgrades: BTreeMap::new(),
             abilities: BTreeMap::new(),
             locale: LocaleStore(BTreeMap::new()),
+            data_checksum: None,
         }
     }
 }
@@ -316,6 +319,19 @@ impl VersionedStore {
             return self.apply_formatter(&fmt, build);
         }
         None
+    }
+
+    /// Returns `(data_checksum, app_binary_checksum)` for the exact `build` version.
+    ///
+    /// `app_binary_checksum` is identical to the build number (the PE build number
+    /// is what the game sends as `appBinaryChecksum` in API requests).
+    /// Returns `None` if the exact version is not present or has no `data_checksum`.
+    /// No version fallback is applied — checksums are version-specific and cannot be
+    /// substituted from a nearby patch.
+    pub fn checksums_for(&self, build: Version) -> Option<(i32, u32)> {
+        let idx = self.versions.partition_point(|g| g.version < build);
+        let gd = self.versions.get(idx).filter(|g| g.version == build)?;
+        gd.data_checksum.map(|dc| (dc, gd.version))
     }
 
     /// Returns the icon name for `pbgid` at `build`, skipping versions where the icon is empty,

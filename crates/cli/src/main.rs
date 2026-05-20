@@ -5,6 +5,7 @@ use std::{path::{Path, PathBuf}, process, time::Duration};
 use cohlib::{extract_build_order, Replay, VersionedStore};
 use indicatif::{ProgressBar, ProgressStyle};
 
+mod checksums;
 mod images;
 
 fn spinner_style() -> ProgressStyle {
@@ -208,7 +209,7 @@ fn cmd_import(args: &[String]) {
     let pb = ProgressBar::new(xml_count);
     pb.set_style(bar_style());
     pb.set_message("Parsing entity XML");
-    let gd = match attrib::extract_game_data(&entries, locale, version, || pb.inc(1)) {
+    let mut gd = match attrib::extract_game_data(&entries, locale, version, || pb.inc(1)) {
         Ok(gd) => gd,
         Err(e) => {
             pb.finish_with_message(format!("error extracting game data: {e}"));
@@ -222,6 +223,12 @@ fn cmd_import(args: &[String]) {
         gd.upgrades.len(),
         gd.abilities.len(),
     ));
+
+    let data_checksum = checksums::compute_data_checksum(&depot_path).unwrap_or_else(|e| {
+        eprintln!("error computing dataChecksum: {e}");
+        process::exit(1);
+    });
+    gd.data_checksum = Some(data_checksum);
 
     let version_str = version.to_string();
     let out_version_dir = output_dir.join(&version_str);

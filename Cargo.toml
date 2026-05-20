@@ -52,6 +52,7 @@ tar           = "0.4"
 
 # Hashing
 sha2          = "0.10"
+crc32fast     = "1"
 
 # Optional Ruby FFI
 magnus        = { version = "0.8" }

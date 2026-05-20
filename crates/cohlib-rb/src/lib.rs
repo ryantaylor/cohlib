@@ -137,6 +137,15 @@ fn versioned_store_icon_for(rb_self: &VersionedStore, pbgid: u32, build: u32) ->
     rb_self.icon_for(pbgid, build).map(|s| s.to_owned())
 }
 
+fn versioned_store_checksums_for(ruby: &Ruby, rb_self: &VersionedStore, build: u32) -> Option<RHash> {
+    rb_self.checksums_for(build).map(|(dc, abc)| {
+        let h = ruby.hash_new();
+        h.aset(ruby.to_symbol("data_checksum"), dc).unwrap();
+        h.aset(ruby.to_symbol("app_binary_checksum"), abc).unwrap();
+        h
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Extension init
 // ---------------------------------------------------------------------------
@@ -211,6 +220,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     store_class.define_method("t", method!(versioned_store_t, 2))?;
     store_class.define_method("localize", method!(versioned_store_localize, 2))?;
     store_class.define_method("icon_for", method!(versioned_store_icon_for, 2))?;
+    store_class.define_method("checksums_for", method!(versioned_store_checksums_for, 1))?;
 
     Ok(())
 }

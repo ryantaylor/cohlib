@@ -41,12 +41,24 @@ jobs:
       - name: Build cohlib CLI
         run: cargo build --release --bin cohlib
 
-      # Download only the five files needed for import (~2.1 GB total):
-      #   RelicCoH3.exe            143 MB  version number extraction
-      #   ReferenceAttributes.sga   29 MB  entity/squad/ability/upgrade XML
-      #   LocaleEnglish.sga        859 KB  localised display names
-      #   UI.sga                   935 MB  icon textures
-      #   ScenariosMP.sga            1 GB  map minimap textures
+      # Download the files needed for import from two depots:
+      #
+      # Depot 1677281 — SGA archives and game executable:
+      #   RelicCoH3.exe                 143 MB  version number + appBinaryChecksum
+      #   anvil/archives/ReferenceAttributes.sga
+      #                                  29 MB  entity/squad/ability/upgrade XML
+      #   anvil/archives/LocaleEnglish.sga
+      #                                 859 KB  localised display names
+      #   anvil/archives/UI.sga         935 MB  icon textures
+      #   anvil/archives/ScenariosMP.sga  1 GB  map minimap textures
+      #   anvil/archives/Attrib.sga           syncChecked — dataChecksum input
+      #   engine/archives/Data.sga            syncChecked — dataChecksum input
+      #   engine/archives/UI.sga              syncChecked — dataChecksum input
+      #   engine/archives/reflect.sga         syncChecked — dataChecksum input
+      #   common/archives/Data.sga            syncChecked — dataChecksum input
+      #
+      # Depot 1677282 — module descriptor:
+      #   RelicGame.module                    lists which archives are syncChecked
       - name: Download depot files
         env:
           STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
@@ -58,12 +70,25 @@ jobs:
             'anvil/archives/LocaleEnglish.sga' \
             'anvil/archives/UI.sga' \
             'anvil/archives/ScenariosMP.sga' \
+            'anvil/archives/Attrib.sga' \
+            'engine/archives/Data.sga' \
+            'engine/archives/UI.sga' \
+            'engine/archives/reflect.sga' \
+            'common/archives/Data.sga' \
             > filelist.txt
           depotdownloader/DepotDownloader \
             -app 1677280 -depot 1677281 \
             -username "$STEAM_USERNAME" \
             -password "$STEAM_PASSWORD" \
             -filelist filelist.txt \
+            -dir depot/
+
+          printf '%s\n' 'RelicGame.module' > filelist2.txt
+          depotdownloader/DepotDownloader \
+            -app 1677280 -depot 1677282 \
+            -username "$STEAM_USERNAME" \
+            -password "$STEAM_PASSWORD" \
+            -filelist filelist2.txt \
             -dir depot/
 
       # Extract the build number from RelicCoH3.exe by parsing VS_FIXEDFILEINFO
