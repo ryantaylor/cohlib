@@ -1,12 +1,11 @@
 name: Poll Steam
 
-# Checks the Steam buildid for CoH3 every 15 minutes and triggers
-# Update Game Data when a new build is detected. Offset from the top
-# of the hour to avoid GitHub Actions scheduler contention.
+# Checks the Steam buildid for CoH3 and triggers Update Game Data
+# when a new build is detected. Scheduled externally via an AWS
+# Lambda + EventBridge rule (GitHub Actions' own cron proved too
+# unreliable for this use case).
 
 on:
-  schedule:
-    - cron: '7-59/15 * * * *'
   workflow_dispatch:
 
 permissions:
