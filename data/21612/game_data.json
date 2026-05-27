@@ -64631,5 +64631,7 @@
     "11260808": "Deals suppression damage, +%1%%% reload speed. Reduces penetration by %2% at all ranges.",
     "11260869": "Battleships can create and deploy companies. Bombardment ability can damage enemies in an area.",
     "11260974": "Tank crews push the vehicle to its limits when entering combat. Effects only retrigger when out of combat."
-  }
+  },
+  "data_checksum": null,
+  "semver": null
 }

@@ -32218,5 +32218,7 @@
     "11264390": "Support infantry effective against infantry at short-range. Can repair at an increased speed and build defenses. Can throw Satchel Charges to deal high damage to stationary targets.",
     "11264400": "Order the unit to disable its movement and generate additional fuel or munitions resources based on the resource point. Resources are only granted to the truck's owner and not to allies.",
     "11264401": "Grants +%1% fuel or +%2% munitions."
-  }
+  },
+  "data_checksum": null,
+  "semver": null
 }

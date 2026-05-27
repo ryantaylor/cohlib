@@ -67590,5 +67590,7 @@
     "11264222": "Permanently mark a friendly territory point or Bunker as a Defensive Line. Infantry in the radius take less damage. Lasts until destroyed, decaptured, or a new point is designated.",
     "11264223": "Stabilized Shot",
     "11264224": "+%1%%% penetration, and +%2%%% accuracy on the first shot."
-  }
+  },
+  "data_checksum": null,
+  "semver": null
 }

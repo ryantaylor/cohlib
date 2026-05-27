@@ -129,6 +129,22 @@ impl LocaleStore {
     }
 }
 
+/// Marketing semver triple `major.minor.patch` extracted from `RelicCoH3.exe`,
+/// e.g. `2.4.0` for build 46121. The build number is tracked separately as
+/// [`GameData::version`] (the PE ProductVersion build number).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Semver {
+    pub major: u8,
+    pub minor: u8,
+    pub patch: u8,
+}
+
+impl std::fmt::Display for Semver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameData {
     pub version: Version,
@@ -139,6 +155,8 @@ pub struct GameData {
     pub locale: LocaleStore,
     #[serde(default)]
     pub data_checksum: Option<i32>,
+    #[serde(default)]
+    pub semver: Option<Semver>,
 }
 
 impl GameData {
@@ -151,6 +169,7 @@ impl GameData {
             abilities: BTreeMap::new(),
             locale: LocaleStore(BTreeMap::new()),
             data_checksum: None,
+            semver: None,
         }
     }
 }
@@ -332,6 +351,26 @@ impl VersionedStore {
         let idx = self.versions.partition_point(|g| g.version < build);
         let gd = self.versions.get(idx).filter(|g| g.version == build)?;
         gd.data_checksum.map(|dc| (dc, gd.version))
+    }
+
+    /// Returns the marketing [`Semver`] (e.g. `2.4.0`) for the exact `build` version,
+    /// if extracted at import time. No version fallback — marketing versions are
+    /// version-specific.
+    pub fn semver_for(&self, build: Version) -> Option<Semver> {
+        let idx = self.versions.partition_point(|g| g.version < build);
+        let gd = self.versions.get(idx).filter(|g| g.version == build)?;
+        gd.semver
+    }
+
+    /// Returns the marketing semver string (e.g. `"2.4.0"`) for the exact `build`
+    /// version, if a semver was extracted. No version fallback.
+    pub fn semver_string_for(&self, build: Version) -> Option<String> {
+        self.semver_for(build).map(|s| s.to_string())
+    }
+
+    /// Returns all build numbers currently loaded in the store, sorted ascending.
+    pub fn builds(&self) -> Vec<Version> {
+        self.versions.iter().map(|g| g.version).collect()
     }
 
     /// Returns the icon name for `pbgid` at `build`, skipping versions where the icon is empty,

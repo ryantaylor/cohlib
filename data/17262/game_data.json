@@ -28822,5 +28822,7 @@
     "11258034": "Greatly increases the unit's forward vision, but reduces speed and disables weapons. Unit cannot see to the sides or rear.",
     "11258084": "Grants 40 munitions.",
     "11258204": "Greatly increases the unit's forward vision, but reduces speed. Unit cannot see to the sides or rear."
-  }
+  },
+  "data_checksum": null,
+  "semver": null
 }

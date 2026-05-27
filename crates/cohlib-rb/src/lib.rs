@@ -5,7 +5,7 @@
 
 use cohlib::{
     extract_build_order, parse_replay, BuildAction, BuildActionKind, BuildOrder, Message, Player,
-    Replay, VersionedStore,
+    Replay, Semver, VersionedStore,
 };
 use magnus::{function, method, prelude::*, Error, RArray, RHash, Ruby};
 
@@ -146,6 +146,30 @@ fn versioned_store_checksums_for(ruby: &Ruby, rb_self: &VersionedStore, build: u
     })
 }
 
+fn semver_to_hash(ruby: &Ruby, s: Semver) -> RHash {
+    let h = ruby.hash_new();
+    h.aset(ruby.to_symbol("major"), s.major).unwrap();
+    h.aset(ruby.to_symbol("minor"), s.minor).unwrap();
+    h.aset(ruby.to_symbol("patch"), s.patch).unwrap();
+    h
+}
+
+fn versioned_store_semver_for(ruby: &Ruby, rb_self: &VersionedStore, build: u32) -> Option<RHash> {
+    rb_self.semver_for(build).map(|s| semver_to_hash(ruby, s))
+}
+
+fn versioned_store_semver_string_for(rb_self: &VersionedStore, build: u32) -> Option<String> {
+    rb_self.semver_string_for(build)
+}
+
+fn versioned_store_builds(ruby: &Ruby, rb_self: &VersionedStore) -> RArray {
+    let arr = ruby.ary_new();
+    for v in rb_self.builds() {
+        arr.push(v).unwrap();
+    }
+    arr
+}
+
 // ---------------------------------------------------------------------------
 // Extension init
 // ---------------------------------------------------------------------------
@@ -221,6 +245,12 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     store_class.define_method("localize", method!(versioned_store_localize, 2))?;
     store_class.define_method("icon_for", method!(versioned_store_icon_for, 2))?;
     store_class.define_method("checksums_for", method!(versioned_store_checksums_for, 1))?;
+    store_class.define_method("semver_for", method!(versioned_store_semver_for, 1))?;
+    store_class.define_method(
+        "semver_string_for",
+        method!(versioned_store_semver_string_for, 1),
+    )?;
+    store_class.define_method("builds", method!(versioned_store_builds, 0))?;
 
     Ok(())
 }

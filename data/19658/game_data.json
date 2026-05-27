@@ -61350,5 +61350,7 @@
     "11259018": "Globally increases the vision range of all vehicles. Vision range bonus is increased while stationary.",
     "11259019": "+%1% vision range. Vision bonus increases to %2% while stationary.",
     "11259144": "Territory Point Without Resource Cache"
-  }
+  },
+  "data_checksum": null,
+  "semver": null
 }

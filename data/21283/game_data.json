@@ -64663,5 +64663,7 @@
     "11260801": "Target Position or Friendly Company",
     "11260808": "Deals suppression damage, +%1%%% reload speed. Reduces penetration by %2% at all ranges.",
     "11260869": "Battleships can create and deploy companies. Bombardment ability can damage enemies in an area."
-  }
+  },
+  "data_checksum": null,
+  "semver": null
 }

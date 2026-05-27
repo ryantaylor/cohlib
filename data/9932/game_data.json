@@ -38210,5 +38210,7 @@
     "11247757": "Can deploy a Smokescreen.",
     "11247759": "Can Repair and Build Defenses. Has increased Repair speed.",
     "11247763": "Comes towed by a CMP 15cwt Truck."
-  }
+  },
+  "data_checksum": null,
+  "semver": null
 }

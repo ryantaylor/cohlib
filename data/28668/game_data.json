@@ -68559,5 +68559,7 @@
     "11265169": "Very effective against vehicles. Less effective against tank frontal armor at long-range. \\n•Gains increased range when stationary for %1% seconds \\n•Small squad size (%2%)",
     "11265170": "%1%  / %2%",
     "11265171": "Support Infantry"
-  }
+  },
+  "data_checksum": null,
+  "semver": null
 }

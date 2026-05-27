@@ -70199,5 +70199,7 @@
     "11266480": "Fires a series of flares in front of the tank, revealing the area and reveals camouflaged units.",
     "11266481": "enemy squad members affected by area of effect",
     "11266482": "An explosive device that is triggered when enemies attempt to capture the territory point it is planted on."
-  }
+  },
+  "data_checksum": null,
+  "semver": null
 }

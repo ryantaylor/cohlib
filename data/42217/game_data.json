@@ -109203,5 +109203,7 @@
     "11273406": "Upgrades the Bunker into a Medical Bunker that heals and reinforces nearby infantry. \\n• Deploys Medic(s) to collect friendly casualties that grant manpower upon recovery.",
     "11273430": "Reduces incoming damage by -%1%%%, +%2% range and vision, +%3%%% reload speed and disables movement when active.\\n\\nVehicles with fixed main weapons gain +%4% range and increases weapon arc radius by +%5%.",
     "11273567": "Ability has increased range over auto-attack."
-  }
+  },
+  "data_checksum": null,
+  "semver": null
 }

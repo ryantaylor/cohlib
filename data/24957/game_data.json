@@ -65284,5 +65284,7 @@
     "11261891": "Can be upgraded with an anti-infantry flamethrower and spotting scopes to increase vision when stationary.",
     "11261892": "Light vehicle effective against vehicles at short-range. Deals limited damage to infantry.",
     "11261893": "Advanced medium tank with increased health that is very effective against infantry, vehicles, and structures. Turret weapon is effective against vehicles and can damage tanks. Primary cannon must face targets directly to fire."
-  }
+  },
+  "data_checksum": null,
+  "semver": null
 }

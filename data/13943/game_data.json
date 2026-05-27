@@ -57465,5 +57465,7 @@
     "11253464": "Globally upgrades all Scouts to Pathfinders. Increases health and adds an additional soldier.",
     "11253566": "Increases the penetration of all tank guns and autocannons.",
     "11253665": "Own Units"
-  }
+  },
+  "data_checksum": null,
+  "semver": null
 }
