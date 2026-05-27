@@ -4,8 +4,8 @@ name: Poll Steam
 # Update Game Data when a new build is detected.
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
+  # schedule:
+  #   - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
