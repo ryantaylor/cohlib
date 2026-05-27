@@ -138,6 +138,28 @@ jobs:
         run: |
           ./target/release/cohlib import depot/ --output data/ --images images/
 
+      # Read the marketing semver written by `cohlib import` into game_data.json.
+      # Fall back to the build number when semver derivation failed (the import
+      # logs a warning but does not fail in that case).
+      - name: Resolve release tag
+        if: steps.version.outputs.is_new == 'true'
+        id: tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          SEMVER=$(jq -r '
+            if .semver then "\(.semver.major).\(.semver.minor).\(.semver.patch)" else "" end
+          ' "data/$VERSION/game_data.json")
+          if [ -n "$SEMVER" ]; then
+            TAG="v$SEMVER"
+            echo "Using marketing semver tag: $TAG"
+          else
+            TAG="v$VERSION"
+            echo "::warning::Semver missing from game_data.json; falling back to build-number tag $TAG"
+          fi
+          echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "semver=$SEMVER" >> "$GITHUB_OUTPUT"
+
       - name: Commit and push
         if: steps.version.outputs.is_new == 'true'
         id: commit
@@ -156,9 +178,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_TAG: ${{ steps.tag.outputs.release_tag }}
         run: |
-          gh release create "v$VERSION" \
-            --title "v$VERSION" \
+          gh release create "$RELEASE_TAG" \
+            --title "$RELEASE_TAG" \
             --notes "Automated import of CoH3 game data for build $VERSION." \
             "images/$VERSION/manifest.json" \
             "images/$VERSION/full.tar.gz" \
@@ -180,6 +203,7 @@ jobs:
                 sha: '${{ steps.commit.outputs.sha }}',
                 ref: 'refs/heads/main',
                 version: '${{ steps.version.outputs.version }}',
-                release_tag: 'v${{ steps.version.outputs.version }}',
+                semver: '${{ steps.tag.outputs.semver }}',
+                release_tag: '${{ steps.tag.outputs.release_tag }}',
               },
             });
