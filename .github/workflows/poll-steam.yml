@@ -1,0 +1,73 @@
+name: Poll Steam
+
+# Checks the Steam buildid for CoH3 every 5 minutes and triggers
+# Update Game Data when a new build is detected.
+
+on:
+  # schedule:
+  #   - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: poll-steam
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch current buildid from Steam
+        id: steam
+        run: |
+          docker run --rm steamcmd/steamcmd:latest \
+            +login anonymous \
+            +app_info_update 1 \
+            +app_info_print 1677280 \
+            +quit 2>/dev/null \
+            | grep '"buildid"' \
+            | grep -oP '"\K[0-9]+(?=")' \
+            > /tmp/current_buildid.txt
+
+          CURRENT=$(cat /tmp/current_buildid.txt)
+          if [ -z "$CURRENT" ]; then
+            echo "Failed to parse buildid from Steam — skipping."
+            exit 0
+          fi
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+
+      - name: Compare against last known buildid
+        id: compare
+        run: |
+          KNOWN=$(jq -r '.buildid' state/last_known_buildid.json)
+          CURRENT="${{ steps.steam.outputs.current }}"
+          echo "Known: $KNOWN  Current: $CURRENT"
+          if [ "$CURRENT" = "$KNOWN" ] || [ -z "$CURRENT" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update state file
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          echo "{ \"buildid\": \"${{ steps.steam.outputs.current }}\" }" \
+            > state/last_known_buildid.json
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add state/last_known_buildid.json
+          git commit -m "chore: update last known buildid to ${{ steps.steam.outputs.current }}"
+          git push
+
+      - name: Trigger Update Game Data
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          gh workflow run update-game-data.yml --ref main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

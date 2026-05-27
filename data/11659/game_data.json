@@ -57390,5 +57390,7 @@
     "11253457": "Equips the squad with 2 Scoped G43 Rifles and Flares. Also increases sight and capture speeds.",
     "11253464": "Globally upgrades all Scouts to Pathfinders. Increases health and adds an additional soldier.",
     "11253566": "Increases the penetration of all tank guns and autocannons."
-  }
+  },
+  "data_checksum": null,
+  "semver": null
 }

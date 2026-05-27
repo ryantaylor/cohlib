@@ -68735,5 +68735,7 @@
     "11265554": "Upgrades the squad with two flamethrowers and wire cutters. Flamethrowers ignore cover and deal area of effect damage that is effective against infantry, buildings, and emplacements.",
     "11265559": "Increases the unit's speed for a period of time. Infantry units are unable to fire on the move while the ability is active.",
     "11265575": "Mechanized Support Center or Convert from existing M3 Personnel Carriers"
-  }
+  },
+  "data_checksum": null,
+  "semver": null
 }

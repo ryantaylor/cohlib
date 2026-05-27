@@ -185929,5 +185929,10 @@
     "11275599": "Must be within HQ Sector",
     "11275615": ""
   },
-  "data_checksum": -427292781
+  "data_checksum": -427292781,
+  "semver": {
+    "major": 2,
+    "minor": 4,
+    "patch": 0
+  }
 }

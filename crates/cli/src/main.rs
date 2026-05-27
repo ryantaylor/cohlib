@@ -7,6 +7,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 mod checksums;
 mod images;
+mod semver;
 
 fn spinner_style() -> ProgressStyle {
     ProgressStyle::with_template("{spinner:.cyan} {msg}")
@@ -229,6 +230,17 @@ fn cmd_import(args: &[String]) {
         process::exit(1);
     });
     gd.data_checksum = Some(data_checksum);
+
+    let exe_path = depot_path.join("RelicCoH3.exe");
+    match semver::derive_semver(&exe_path) {
+        Ok(s) => {
+            eprintln!("Derived marketing semver: {s} (build {version})");
+            gd.semver = Some(s);
+        }
+        Err(e) => {
+            eprintln!("warning: could not derive marketing semver: {e}");
+        }
+    }
 
     let version_str = version.to_string();
     let out_version_dir = output_dir.join(&version_str);

@@ -179,5 +179,7 @@ jobs:
               client_payload: {
                 sha: '${{ steps.commit.outputs.sha }}',
                 ref: 'refs/heads/main',
+                version: '${{ steps.version.outputs.version }}',
+                release_tag: 'v${{ steps.version.outputs.version }}',
               },
             });

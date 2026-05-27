@@ -28727,5 +28727,7 @@
     "11256548": "Affects infantry, vehicles, team weapons, and emplacements.",
     "11256549": "Each enemy vehicle destroyed by your units grants 200 manpower and 30 fuel during the ability's duration.",
     "11256550": "Designates a heavy artillery barrage over the target area. Massive blast radius. Extremely effective against stationary targets."
-  }
+  },
+  "data_checksum": null,
+  "semver": null
 }

@@ -73605,5 +73605,7 @@
     "11267313": "Vehicles are provided additional protection to improve survivability.",
     "11267317": "This unit has +%1% increased range over other tanks, giving the unit a total of %2% range. ",
     "11267318": "Advanced Gunnery Optics"
-  }
+  },
+  "data_checksum": null,
+  "semver": null
 }
