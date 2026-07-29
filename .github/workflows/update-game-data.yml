@@ -160,6 +160,12 @@ jobs:
           echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "semver=$SEMVER" >> "$GITHUB_OUTPUT"
 
+      # steam-poll.yml pushes its own "last known buildid" commit to main
+      # right after triggering this workflow, while this job is still
+      # downloading/building/importing (several minutes). That commit almost
+      # always lands before we get here, so the first push attempt below is
+      # expected to be rejected as non-fast-forward; rebase onto the latest
+      # main and retry rather than treating that as a failure.
       - name: Commit and push
         if: steps.version.outputs.is_new == 'true'
         id: commit
@@ -170,7 +176,20 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "data/$VERSION/" "images/$VERSION/hashes.json"
           git commit -m "Game data for version $VERSION"
-          git push origin main
+
+          for i in 1 2 3 4 5; do
+            if git push origin main; then
+              break
+            fi
+            if [ "$i" -eq 5 ]; then
+              echo "::error::Failed to push after $i attempts"
+              exit 1
+            fi
+            echo "Push rejected — rebasing onto latest main and retrying ($i/5)..."
+            git fetch origin main
+            git rebase origin/main
+          done
+
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
