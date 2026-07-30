@@ -141,17 +141,28 @@ jobs:
       # Read the marketing semver written by `cohlib import` into game_data.json.
       # Fall back to the build number when semver derivation failed (the import
       # logs a warning but does not fail in that case).
+      #
+      # Minor hotfixes sometimes ship without a marketing semver bump, so the
+      # derived semver can collide with a version already released. When a
+      # release for "v$SEMVER" already exists, disambiguate by appending the
+      # build number as a fourth component (e.g. 2.5.0 -> 2.5.0.48791).
       - name: Resolve release tag
         if: steps.version.outputs.is_new == 'true'
         id: tag
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           SEMVER=$(jq -r '
             if .semver then "\(.semver.major).\(.semver.minor).\(.semver.patch)" else "" end
           ' "data/$VERSION/game_data.json")
           if [ -n "$SEMVER" ]; then
             TAG="v$SEMVER"
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              echo "Release $TAG already exists — hotfix build $VERSION shares its semver; appending build number."
+              SEMVER="$SEMVER.$VERSION"
+              TAG="v$SEMVER"
+            fi
             echo "Using marketing semver tag: $TAG"
           else
             TAG="v$VERSION"
