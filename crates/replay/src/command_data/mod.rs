@@ -3,6 +3,7 @@
 mod empty;
 mod pbgid;
 mod source;
+mod source_pbgid;
 mod sourced;
 mod sourced_index;
 mod sourced_pbgid;
@@ -12,6 +13,7 @@ mod unknown;
 pub use crate::command_data::empty::Empty;
 pub use crate::command_data::pbgid::Pbgid;
 pub use crate::command_data::source::Source;
+pub use crate::command_data::source_pbgid::SourcePbgid;
 pub use crate::command_data::sourced::Sourced;
 pub use crate::command_data::sourced_index::SourcedIndex;
 pub use crate::command_data::sourced_pbgid::SourcedPbgid;

@@ -23,6 +23,9 @@ pub enum CommandData {
     /// which keeps only the legacy truncated identifier). Used for commands whose
     /// source can legitimately be a multi-squad selection.
     SourceOnly(Source),
+    /// Header, source and a pbgid, with the full `Source` preserved (unlike
+    /// `SourcedPbgid`, which keeps only the legacy truncated identifier).
+    SourcePbgid(Source, u32),
     Unknown,
 }
 
@@ -115,6 +118,22 @@ impl CommandData {
         )(input)
     }
 
+    /// Header, source, then a parameter block whose data is usually a single pbgid
+    /// value — like [`Self::parse_sourced_pbgid`], but preserving the full `Source`
+    /// (see [`CommandData::SourcePbgid`]) since these commands' source can legitimately
+    /// be a multi-squad selection. See [`Self::parse_pbgid`] on the `Unknown` fallback
+    /// for a non-pbgid first value (observed here for `SCMD_ReinforceUnit`, same known
+    /// exception as elsewhere).
+    pub fn parse_source_pbgid(input: Span) -> ParserResult<CommandData> {
+        map(
+            tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
+            |(_, source, block)| match Value::try_pbgid(expect_block(block).data) {
+                Some(pbgid) => CommandData::SourcePbgid(source, pbgid),
+                None => CommandData::Unknown,
+            },
+        )(input)
+    }
+
     pub fn parse_unknown(input: Span) -> ParserResult<CommandData> {
         map(rest, |_| CommandData::Unknown)(input)
     }
@@ -141,6 +160,7 @@ impl CommandData {
             | CommandType::SCMD_UnloadSquads
             | CommandType::CMD_UnloadSquads
             | CommandType::PCMD_Surrender => Self::parse_squads,
+            CommandType::SCMD_Upgrade | CommandType::SCMD_ReinforceUnit => Self::parse_source_pbgid,
             _ => Self::parse_unknown,
         }
     }

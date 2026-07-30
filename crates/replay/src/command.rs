@@ -1,7 +1,9 @@
 //! Wrapper for Company of Heroes 3 player commands.
 
 use crate::{
-    command_data::{Empty, Pbgid, Sourced, SourcedIndex, SourcedPbgid, Squads, Unknown},
+    command_data::{
+        Empty, Pbgid, SourcePbgid, Sourced, SourcedIndex, SourcedPbgid, Squads, Unknown,
+    },
     command_type::CommandType,
     data::ticks,
 };
@@ -24,6 +26,9 @@ pub enum Command {
     /// A player clearing all pending (not-yet-purchased) battlegroup ability
     /// selections, e.g. `PCMD_TentativeUpgradeRemoveAll`.
     DeselectAllBattlegroupAbilities(Squads),
+    /// A squad reinforcing (adding models back to a depleted squad),
+    /// `SCMD_ReinforceUnit`.
+    Reinforce(SourcePbgid),
     /// One or more squads retreating to base.
     Retreat(Squads),
     SelectBattlegroup(Pbgid),
@@ -36,6 +41,9 @@ pub enum Command {
     /// entity (`CMD_UnloadSquads`) or by the passenger squads themselves
     /// (`SCMD_UnloadSquads`) — both produce this variant since the effect is the same.
     UnloadSquads(Squads),
+    /// A squad researching an upgrade, `SCMD_Upgrade` — the squad-level equivalent of
+    /// `BuildGlobalUpgrade`.
+    UpgradeSquad(SourcePbgid),
     UseAbility(SourcedPbgid),
     UseBattlegroupAbility(Pbgid),
     Unknown(Unknown),
@@ -136,6 +144,18 @@ impl Command {
                 }
                 _ => panic!(
                     "a source-only command isn't being handled here! command type {:?}",
+                    command.action_type
+                ),
+            },
+            ticks::CommandData::SourcePbgid(source, pbgid) => match command.action_type {
+                CommandType::SCMD_Upgrade => {
+                    Self::UpgradeSquad(SourcePbgid::new(tick, command.index, source, pbgid))
+                }
+                CommandType::SCMD_ReinforceUnit => {
+                    Self::Reinforce(SourcePbgid::new(tick, command.index, source, pbgid))
+                }
+                _ => panic!(
+                    "a source pbgid command isn't being handled here! command type {:?}",
                     command.action_type
                 ),
             },
