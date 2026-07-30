@@ -195,6 +195,155 @@ fn parse_one_char_options() {
 }
 
 #[test]
+fn parse_starting_positions_8p() {
+    let data = include_bytes!("../replays/startpos_8p.rec");
+    let replay = Replay::from_bytes(data).unwrap();
+
+    let mut positions: Vec<_> = replay.starting_positions().to_vec();
+    positions.sort_by_key(|position| position.index());
+
+    let expected = vec![
+        (0u32, "1", -288.60, -118.42),
+        (1, "2", 245.42, -154.79),
+        (2, "3", -288.91, -61.49),
+        (3, "4", 264.54, -99.90),
+        (4, "5", -283.29, 31.30),
+        (5, "6", 282.34, -16.26),
+        (6, "7", -280.56, 95.12),
+        (7, "8", 287.64, 43.63),
+    ];
+    assert_eq!(positions.len(), expected.len());
+    for (position, (index, name, x, y)) in positions.iter().zip(expected) {
+        assert_eq!(position.index(), index);
+        assert_eq!(position.name(), name);
+        assert!(
+            (position.x() - x).abs() < 0.05,
+            "x: {} vs {}",
+            position.x(),
+            x
+        );
+        assert!(
+            (position.y() - y).abs() < 0.05,
+            "y: {} vs {}",
+            position.y(),
+            y
+        );
+    }
+
+    assert_eq!(replay.territory_points().len(), 30);
+    assert_eq!(replay.victory_points().len(), 3);
+}
+
+#[test]
+fn parse_player_starting_positions() {
+    let data = include_bytes!("../replays/startpos_8p.rec");
+    let replay = Replay::from_bytes(data).unwrap();
+    let players = replay.players();
+
+    assert!(players
+        .iter()
+        .all(|player| player.starting_position().is_some()));
+
+    let cx: f32 = players
+        .iter()
+        .map(|player| player.starting_position().unwrap().x())
+        .sum::<f32>()
+        / players.len() as f32;
+    let cy: f32 = players
+        .iter()
+        .map(|player| player.starting_position().unwrap().y())
+        .sum::<f32>()
+        / players.len() as f32;
+
+    let angle_degrees = |player: &cohlib::Player| {
+        let position = player.starting_position().unwrap();
+        (position.y() - cy).atan2(position.x() - cx).to_degrees()
+    };
+    let start_angle = angle_degrees(
+        players
+            .iter()
+            .find(|player| player.name() == "Marssan")
+            .unwrap(),
+    );
+
+    let mut clockwise = players.clone();
+    clockwise.sort_by(|a, b| {
+        // increasing angular distance clockwise (i.e. decreasing angle) from the bottom-left
+        // starting position
+        let key = |player: &cohlib::Player| (start_angle - angle_degrees(player)).rem_euclid(360.0);
+        key(a).partial_cmp(&key(b)).unwrap()
+    });
+
+    assert_eq!(
+        clockwise
+            .iter()
+            .map(|player| player.name())
+            .collect::<Vec<&str>>(),
+        vec![
+            "Marssan",
+            "Kung Pao Panda",
+            "xd",
+            "Frying Pan",
+            "Barack Obungus",
+            "dlwlsdn435",
+            "ArtRam",
+            "1213229801",
+        ]
+    );
+}
+
+#[test]
+fn parse_starting_positions_other_shapes() {
+    let data = include_bytes!("../replays/one_seven_zero.rec");
+    assert_eq!(
+        Replay::from_bytes(data).unwrap().starting_positions().len(),
+        6
+    );
+
+    let data = include_bytes!("../replays/usf_airborne_build.rec");
+    assert_eq!(
+        Replay::from_bytes(data).unwrap().starting_positions().len(),
+        2
+    );
+
+    let data = include_bytes!("../replays/zero_items.rec");
+    assert_eq!(
+        Replay::from_bytes(data).unwrap().starting_positions().len(),
+        4
+    );
+
+    let data = include_bytes!("../replays/unusual_brit_faction.rec");
+    assert_eq!(
+        Replay::from_bytes(data).unwrap().starting_positions().len(),
+        6
+    );
+
+    let data = include_bytes!("../replays/one_delimited_options.rec");
+    let replay = Replay::from_bytes(data).unwrap();
+    assert_eq!(replay.starting_positions().len(), 8);
+    assert!(replay.victory_points().is_empty());
+}
+
+#[test]
+fn parse_no_starting_positions() {
+    let data = include_bytes!("../replays/USvDAK_v10612.rec");
+    let replay = Replay::from_bytes(data).unwrap();
+    assert!(replay.starting_positions().is_empty());
+    assert!(replay
+        .players()
+        .iter()
+        .all(|player| player.starting_position().is_none()));
+
+    let data = include_bytes!("../replays/vs_ai.rec");
+    let replay = Replay::from_bytes(data).unwrap();
+    assert!(replay.starting_positions().is_empty());
+
+    let data = include_bytes!("../replays/automatch.rec");
+    let replay = Replay::from_bytes(data).unwrap();
+    assert!(replay.starting_positions().is_empty());
+}
+
+#[test]
 fn parse_unusual_team_id() {
     let data = include_bytes!("../replays/unusual_team_id.rec");
     let replay = Replay::from_bytes(data);

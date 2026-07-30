@@ -16,7 +16,7 @@ pub use error::Error;
 
 pub use command::Command;
 pub use command_type::CommandType;
-pub use map::Map;
+pub use map::{Map, MapPoint, StartingPosition};
 pub use message::Message;
 pub use parsed::{GameType, Replay};
 pub use player::{Faction, Player, Team};

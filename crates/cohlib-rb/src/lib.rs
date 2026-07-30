@@ -4,8 +4,8 @@
 //! extraction, and versioned game data access.
 
 use cohlib::{
-    extract_build_order, parse_replay, BuildAction, BuildActionKind, BuildOrder, Message, Player,
-    Replay, Semver, VersionedStore,
+    extract_build_order, parse_replay, BuildAction, BuildActionKind, BuildOrder, MapPoint, Message,
+    Player, Replay, Semver, StartingPosition, VersionedStore,
 };
 use magnus::{function, method, prelude::*, Error, RArray, RHash, Ruby};
 
@@ -33,6 +33,30 @@ fn replay_players(ruby: &Ruby, rb_self: &Replay) -> RArray {
     arr
 }
 
+fn replay_starting_positions(ruby: &Ruby, rb_self: &Replay) -> RArray {
+    let arr = ruby.ary_new();
+    for position in rb_self.starting_positions().iter().cloned() {
+        arr.push(ruby.obj_wrap(position)).unwrap();
+    }
+    arr
+}
+
+fn replay_territory_points(ruby: &Ruby, rb_self: &Replay) -> RArray {
+    let arr = ruby.ary_new();
+    for point in rb_self.territory_points().iter().cloned() {
+        arr.push(ruby.obj_wrap(point)).unwrap();
+    }
+    arr
+}
+
+fn replay_victory_points(ruby: &Ruby, rb_self: &Replay) -> RArray {
+    let arr = ruby.ary_new();
+    for point in rb_self.victory_points().iter().cloned() {
+        arr.push(ruby.obj_wrap(point)).unwrap();
+    }
+    arr
+}
+
 // ---------------------------------------------------------------------------
 // CohLib::Player
 // ---------------------------------------------------------------------------
@@ -53,6 +77,10 @@ fn player_team(rb_self: &Player) -> usize {
     rb_self.team().value()
 }
 
+fn player_starting_position(rb_self: &Player) -> Option<StartingPosition> {
+    rb_self.starting_position().cloned()
+}
+
 // ---------------------------------------------------------------------------
 // CohLib::Message
 // ---------------------------------------------------------------------------
@@ -61,6 +89,32 @@ fn message_to_h(ruby: &Ruby, rb_self: &Message) -> RHash {
     let hash = ruby.hash_new();
     hash.aset(ruby.to_symbol("tick"), rb_self.tick()).unwrap();
     hash.aset(ruby.to_symbol("message"), rb_self.message()).unwrap();
+    hash
+}
+
+// ---------------------------------------------------------------------------
+// CohLib::StartingPosition
+// ---------------------------------------------------------------------------
+
+fn starting_position_to_h(ruby: &Ruby, rb_self: &StartingPosition) -> RHash {
+    let hash = ruby.hash_new();
+    hash.aset(ruby.to_symbol("index"), rb_self.index()).unwrap();
+    hash.aset(ruby.to_symbol("name"), rb_self.name()).unwrap();
+    hash.aset(ruby.to_symbol("x"), rb_self.x()).unwrap();
+    hash.aset(ruby.to_symbol("y"), rb_self.y()).unwrap();
+    hash
+}
+
+// ---------------------------------------------------------------------------
+// CohLib::MapPoint
+// ---------------------------------------------------------------------------
+
+fn map_point_to_h(ruby: &Ruby, rb_self: &MapPoint) -> RHash {
+    let hash = ruby.hash_new();
+    hash.aset(ruby.to_symbol("icon"), rb_self.icon()).unwrap();
+    hash.aset(ruby.to_symbol("tags"), rb_self.tags()).unwrap();
+    hash.aset(ruby.to_symbol("x"), rb_self.x()).unwrap();
+    hash.aset(ruby.to_symbol("y"), rb_self.y()).unwrap();
     hash
 }
 
@@ -197,6 +251,9 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     )?;
     replay_class.define_method("length", method!(Replay::length, 0))?;
     replay_class.define_method("players", method!(replay_players, 0))?;
+    replay_class.define_method("starting_positions", method!(replay_starting_positions, 0))?;
+    replay_class.define_method("territory_points", method!(replay_territory_points, 0))?;
+    replay_class.define_method("victory_points", method!(replay_victory_points, 0))?;
 
     // CohLib::Player
     let player_class = module.define_class("Player", ruby.class_object())?;
@@ -213,12 +270,29 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     player_class.define_method("steam_id", method!(Player::steam_id, 0))?;
     player_class.define_method("profile_id", method!(Player::profile_id, 0))?;
     player_class.define_method("messages", method!(player_messages, 0))?;
+    player_class.define_method("starting_position", method!(player_starting_position, 0))?;
 
     // CohLib::Message
     let message_class = module.define_class("Message", ruby.class_object())?;
     message_class.define_method("tick", method!(Message::tick, 0))?;
     message_class.define_method("message", method!(Message::message, 0))?;
     message_class.define_method("to_h", method!(message_to_h, 0))?;
+
+    // CohLib::StartingPosition
+    let starting_position_class = module.define_class("StartingPosition", ruby.class_object())?;
+    starting_position_class.define_method("index", method!(StartingPosition::index, 0))?;
+    starting_position_class.define_method("name", method!(StartingPosition::name, 0))?;
+    starting_position_class.define_method("x", method!(StartingPosition::x, 0))?;
+    starting_position_class.define_method("y", method!(StartingPosition::y, 0))?;
+    starting_position_class.define_method("to_h", method!(starting_position_to_h, 0))?;
+
+    // CohLib::MapPoint
+    let map_point_class = module.define_class("MapPoint", ruby.class_object())?;
+    map_point_class.define_method("icon", method!(MapPoint::icon, 0))?;
+    map_point_class.define_method("tags", method!(MapPoint::tags, 0))?;
+    map_point_class.define_method("x", method!(MapPoint::x, 0))?;
+    map_point_class.define_method("y", method!(MapPoint::y, 0))?;
+    map_point_class.define_method("to_h", method!(map_point_to_h, 0))?;
 
     // CohLib::BuildAction
     let build_action_class = module.define_class("BuildAction", ruby.class_object())?;
