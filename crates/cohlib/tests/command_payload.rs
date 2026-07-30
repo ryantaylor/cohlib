@@ -36,6 +36,22 @@ const DECODED_TYPES: &[CommandType] = &[
     // PR 3
     CommandType::SCMD_Upgrade,
     CommandType::SCMD_ReinforceUnit,
+    // PR 4
+    CommandType::CMD_RallyPoint,
+    CommandType::CMD_Move,
+    CommandType::CMD_AttackFromHold,
+    CommandType::SCMD_Move,
+    CommandType::SCMD_Attack,
+    CommandType::SCMD_Capture,
+    CommandType::SCMD_AttackMove,
+    CommandType::SCMD_Load,
+    CommandType::SCMD_Unload,
+    CommandType::SCMD_Face,
+    CommandType::SCMD_CaptureTeamWeapon,
+    CommandType::SCMD_PickUpSimItem,
+    CommandType::SCMD_BuildStructure,
+    CommandType::SCMD_Recrew,
+    CommandType::PCMD_DetonateCharges,
 ];
 
 /// Fixtures with pre-existing parse failures unrelated to command parsing (present on

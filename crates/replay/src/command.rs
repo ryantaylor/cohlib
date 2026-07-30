@@ -2,10 +2,11 @@
 
 use crate::{
     command_data::{
-        Empty, Pbgid, SourcePbgid, Sourced, SourcedIndex, SourcedPbgid, Squads, Unknown,
+        Empty, Orientation, Pbgid, Position, SourcePbgid, Sourced, SourcedIndex, SourcedPbgid,
+        Squads, Targeted, Unknown,
     },
     command_type::CommandType,
-    data::ticks,
+    data::ticks::{self, value::TargetValues},
 };
 use serde::{Deserialize, Serialize};
 
@@ -18,25 +19,57 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Command {
     AITakeover(Empty),
+    /// A squad attacking a target, `SCMD_Attack`.
+    Attack(Targeted),
+    /// A squad moving to a position while engaging targets along the way,
+    /// `SCMD_AttackMove`.
+    AttackMove(Targeted),
+    /// An entity attacking from within a garrisoned building, `CMD_AttackFromHold`.
+    AttackFromHold(Targeted),
+    /// A squad constructing a structure, `SCMD_BuildStructure`.
+    BuildStructure(Targeted),
     BuildGlobalUpgrade(SourcedPbgid),
     BuildSquad(SourcedPbgid),
     CancelConstruction(Sourced),
     CancelProduction(SourcedIndex),
+    /// A squad capturing a strategic point, `SCMD_Capture`.
+    Capture(Targeted),
+    /// A squad capturing an abandoned team weapon, `SCMD_CaptureTeamWeapon`.
+    CaptureTeamWeapon(Targeted),
     ConstructEntity(Pbgid),
     /// A player clearing all pending (not-yet-purchased) battlegroup ability
     /// selections, e.g. `PCMD_TentativeUpgradeRemoveAll`.
     DeselectAllBattlegroupAbilities(Squads),
+    /// A player detonating previously-placed demolition charges,
+    /// `PCMD_DetonateCharges`.
+    DetonateCharges(Targeted),
+    /// A squad facing a direction, `SCMD_Face`.
+    Face(Targeted),
+    /// A squad loading into a transport, `SCMD_Load`.
+    Load(Targeted),
+    /// An entity moving, `CMD_Move`.
+    Move(Targeted),
+    /// A squad moving, `SCMD_Move`.
+    MoveSquad(Targeted),
+    /// A squad picking up a dropped item, `SCMD_PickUpSimItem`.
+    PickUpSimItem(Targeted),
+    /// A squad recrewing an abandoned team weapon, `SCMD_Recrew`.
+    Recrew(Targeted),
     /// A squad reinforcing (adding models back to a depleted squad),
     /// `SCMD_ReinforceUnit`.
     Reinforce(SourcePbgid),
     /// One or more squads retreating to base.
     Retreat(Squads),
+    /// An entity or squad setting a rally point, `CMD_RallyPoint`.
+    RallyPoint(Targeted),
     SelectBattlegroup(Pbgid),
     SelectBattlegroupAbility(Pbgid),
     /// One or more squads halting their current action.
     Stop(Squads),
     /// A player surrendering the match.
     Surrender(Squads),
+    /// A squad disembarking from a transport, `SCMD_Unload`.
+    Unload(Targeted),
     /// A transport unloading all of its passengers, whether issued by the transport
     /// entity (`CMD_UnloadSquads`) or by the passenger squads themselves
     /// (`SCMD_UnloadSquads`) — both produce this variant since the effect is the same.
@@ -159,9 +192,59 @@ impl Command {
                     command.action_type
                 ),
             },
+            ticks::CommandData::Targeted(source, targets) => {
+                let (position, facing, orientation, entity) = split_targets(targets);
+                let targeted = Targeted::new(
+                    tick,
+                    command.index,
+                    source,
+                    position,
+                    facing,
+                    orientation,
+                    entity,
+                );
+                match command.action_type {
+                    CommandType::CMD_RallyPoint => Self::RallyPoint(targeted),
+                    CommandType::CMD_Move => Self::Move(targeted),
+                    CommandType::CMD_AttackFromHold => Self::AttackFromHold(targeted),
+                    CommandType::SCMD_Move => Self::MoveSquad(targeted),
+                    CommandType::SCMD_Attack => Self::Attack(targeted),
+                    CommandType::SCMD_Capture => Self::Capture(targeted),
+                    CommandType::SCMD_AttackMove => Self::AttackMove(targeted),
+                    CommandType::SCMD_Load => Self::Load(targeted),
+                    CommandType::SCMD_Unload => Self::Unload(targeted),
+                    CommandType::SCMD_Face => Self::Face(targeted),
+                    CommandType::SCMD_CaptureTeamWeapon => Self::CaptureTeamWeapon(targeted),
+                    CommandType::SCMD_PickUpSimItem => Self::PickUpSimItem(targeted),
+                    CommandType::SCMD_BuildStructure => Self::BuildStructure(targeted),
+                    CommandType::SCMD_Recrew => Self::Recrew(targeted),
+                    CommandType::PCMD_DetonateCharges => Self::DetonateCharges(targeted),
+                    _ => panic!(
+                        "a targeted command isn't being handled here! command type {:?}",
+                        command.action_type
+                    ),
+                }
+            }
             ticks::CommandData::Unknown => {
                 Self::Unknown(Unknown::new(tick, command.index, command.action_type))
             }
         }
     }
+}
+
+/// Splits a wire-level `TargetValues` into the public, typed optional fields shared by
+/// every command data shape that can carry targeting information.
+fn split_targets(
+    targets: TargetValues,
+) -> (
+    Option<Position>,
+    Option<f32>,
+    Option<Orientation>,
+    Option<u32>,
+) {
+    let position = targets.position.map(|[x, y, z]| Position::new(x, y, z));
+    let orientation = targets
+        .orientation
+        .map(|[x, y, z, w]| Orientation::new(x, y, z, w));
+    (position, targets.facing, orientation, targets.entity)
 }

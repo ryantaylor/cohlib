@@ -6,10 +6,20 @@
 //! read directly by the command that needs them, bypassing this type.
 
 use crate::data::{ParserResult, Span};
-use nom::combinator::map;
+use nom::combinator::{map, peek};
 use nom::number::complete::{le_f32, le_u32, le_u8};
 use nom::sequence::tuple;
 use nom_tracable::tracable_parser;
+
+/// The targeting-relevant fields ([`Value`] tags `0x02`–`0x05`) found at the front of a
+/// parameter block's data, collected by [`Value::parse_targets`].
+#[derive(Debug, Default, Copy, Clone)]
+pub(crate) struct TargetValues {
+    pub position: Option<[f32; 3]>,
+    pub facing: Option<f32>,
+    pub orientation: Option<[f32; 4]>,
+    pub entity: Option<u32>,
+}
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) enum Value {
@@ -54,5 +64,36 @@ impl Value {
             Ok(_) => None,
             Err(e) => panic!("failed to read expected value: {e:?}"),
         }
+    }
+
+    /// Greedily parses a chain of targeting-relevant values (position, facing, entity
+    /// reference, orientation) from the front of `input`, stopping at the first tag
+    /// that isn't one of those four. Movement commands in particular carry additional
+    /// trailing bytes after this chain that aren't `Value`s at all and aren't
+    /// understood yet (observed but not decoded — see
+    /// `crates/cohlib/tests/command_payload.rs`); stopping cleanly at the first
+    /// unrecognized byte and leaving the rest unread is the intended behavior here, not
+    /// a failure — unlike [`Self::parse`], this never panics.
+    pub(crate) fn parse_targets(mut input: Span) -> ParserResult<TargetValues> {
+        let mut values = TargetValues::default();
+        loop {
+            let peeked: ParserResult<u8> = peek(le_u8)(input);
+            let Ok((_, tag)) = peeked else {
+                break;
+            };
+            if !matches!(tag, 0x02..=0x05) {
+                break;
+            }
+            let (rest, value) = Self::parse(input)?;
+            match value {
+                Value::Position(p) => values.position = Some(p),
+                Value::Facing(f) => values.facing = Some(f),
+                Value::EntityRef(e) => values.entity = Some(e),
+                Value::Orientation(o) => values.orientation = Some(o),
+                Value::Pbgid(_) => unreachable!("pbgid tag is filtered out above"),
+            }
+            input = rest;
+        }
+        Ok((input, values))
     }
 }

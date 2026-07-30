@@ -2,10 +2,11 @@ use crate::{
     command_data::Source,
     command_type::CommandType,
     data::ticks::payload::{self, ParamBlock},
-    data::ticks::value::Value,
+    data::ticks::value::{TargetValues, Value},
     data::{ParserResult, Span},
 };
 use nom::{
+    bytes::complete::take,
     combinator::{flat_map, map, peek, rest},
     multi::length_value,
     number::complete::{le_u16, le_u32, le_u8},
@@ -26,6 +27,9 @@ pub enum CommandData {
     /// Header, source and a pbgid, with the full `Source` preserved (unlike
     /// `SourcedPbgid`, which keeps only the legacy truncated identifier).
     SourcePbgid(Source, u32),
+    /// Header, source, and zero or more targeting values (position, facing,
+    /// orientation, target entity).
+    Targeted(Source, TargetValues),
     Unknown,
 }
 
@@ -134,6 +138,35 @@ impl CommandData {
         )(input)
     }
 
+    /// Header, source, then an optional parameter block containing zero or more
+    /// targeting values (position, facing, orientation, entity reference). Block kinds
+    /// `0x06` and `0x0F` have a fixed-size, not-yet-understood prefix (4 and 8 bytes
+    /// respectively) before the value chain; every other kind these commands use
+    /// (`0x01`, `0x03`, `0x1D`) has none. Validated against every occurrence of these
+    /// block kinds in the corpus examined during development — see
+    /// `Value::parse_targets` on why any further trailing bytes are intentionally left
+    /// unread. No block at all (kind `0xFF`, or absent entirely — the latter seen only
+    /// for `SCMD_Unload`) yields all-`None` targeting fields.
+    pub fn parse_targeted(input: Span) -> ParserResult<CommandData> {
+        map(
+            tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
+            |(_, source, block)| {
+                let targets = match block {
+                    None => TargetValues::default(),
+                    Some(block) => {
+                        let skip: u32 = match block.kind {
+                            0x06 => 4,
+                            0x0F => 8,
+                            _ => 0,
+                        };
+                        parse_targets(skip_bytes(block.data, skip))
+                    }
+                };
+                CommandData::Targeted(source, targets)
+            },
+        )(input)
+    }
+
     pub fn parse_unknown(input: Span) -> ParserResult<CommandData> {
         map(rest, |_| CommandData::Unknown)(input)
     }
@@ -161,6 +194,21 @@ impl CommandData {
             | CommandType::CMD_UnloadSquads
             | CommandType::PCMD_Surrender => Self::parse_squads,
             CommandType::SCMD_Upgrade | CommandType::SCMD_ReinforceUnit => Self::parse_source_pbgid,
+            CommandType::CMD_RallyPoint
+            | CommandType::CMD_Move
+            | CommandType::CMD_AttackFromHold
+            | CommandType::SCMD_Move
+            | CommandType::SCMD_Attack
+            | CommandType::SCMD_Capture
+            | CommandType::SCMD_AttackMove
+            | CommandType::SCMD_Load
+            | CommandType::SCMD_Unload
+            | CommandType::SCMD_Face
+            | CommandType::SCMD_CaptureTeamWeapon
+            | CommandType::SCMD_PickUpSimItem
+            | CommandType::SCMD_BuildStructure
+            | CommandType::SCMD_Recrew
+            | CommandType::PCMD_DetonateCharges => Self::parse_targeted,
             _ => Self::parse_unknown,
         }
     }
@@ -170,6 +218,26 @@ impl CommandData {
 /// decoders for commands known to always carry parameters.
 fn expect_block(block: Option<ParamBlock>) -> ParamBlock {
     block.unwrap_or_else(|| panic!("expected a parameter block, found none"))
+}
+
+/// Skips `n` bytes, panicking if the block doesn't have that many left — used for the
+/// fixed-size, not-yet-understood prefixes some block kinds have before their value
+/// chain.
+fn skip_bytes(data: Span, n: u32) -> Span {
+    let result: ParserResult<Span> = take(n)(data);
+    match result {
+        Ok((rest, _)) => rest,
+        Err(e) => panic!("block too short to skip {n} bytes: {e:?}"),
+    }
+}
+
+/// Parses a chain of targeting values. `Value::parse_targets` is itself infallible;
+/// this just centralizes unwrapping its `ParserResult`.
+fn parse_targets(data: Span) -> TargetValues {
+    match Value::parse_targets(data) {
+        Ok((_, targets)) => targets,
+        Err(e) => panic!("failed to parse targeting values: {e:?}"),
+    }
 }
 
 #[derive(Debug, Clone)]
