@@ -364,8 +364,25 @@ impl VersionedStore {
 
     /// Returns the marketing semver string (e.g. `"2.4.0"`) for the exact `build`
     /// version, if a semver was extracted. No version fallback.
+    ///
+    /// Minor hotfixes sometimes ship a new build without a marketing semver
+    /// bump, so the same `Semver` triple can appear on more than one build in
+    /// the store. Consumers (e.g. cohdb's `PatchVersion.version`, which is
+    /// unique per build) need a distinct string per build, so any build that
+    /// isn't the earliest to carry a given semver gets the build number
+    /// appended as a fourth component, e.g. `2.5.0.48791`.
     pub fn semver_string_for(&self, build: Version) -> Option<String> {
-        self.semver_for(build).map(|s| s.to_string())
+        let semver = self.semver_for(build)?;
+        let earliest = self
+            .versions
+            .iter()
+            .find(|gd| gd.semver == Some(semver))
+            .map(|gd| gd.version);
+        if earliest == Some(build) {
+            Some(semver.to_string())
+        } else {
+            Some(format!("{semver}.{build}"))
+        }
     }
 
     /// Returns all build numbers currently loaded in the store, sorted ascending.
@@ -775,6 +792,80 @@ mod tests {
         store.add_version(make_gd_with_icon(100, 1, ""));
         store.add_version(make_gd_with_icon(200, 1, ""));
         assert_eq!(store.icon_for(1, 200), None);
+    }
+
+    // ---------------------------------------------------------------------------
+    // semver_string_for tests
+    // ---------------------------------------------------------------------------
+
+    fn make_gd_with_semver(version: Version, semver: Semver) -> GameData {
+        let mut gd = GameData::new(version);
+        gd.semver = Some(semver);
+        gd
+    }
+
+    #[test]
+    fn semver_string_for_missing_semver_returns_none() {
+        let mut store = VersionedStore::new();
+        store.add_version(GameData::new(100));
+        assert_eq!(store.semver_string_for(100), None);
+    }
+
+    #[test]
+    fn semver_string_for_unique_semver_returns_plain_string() {
+        let mut store = VersionedStore::new();
+        store.add_version(make_gd_with_semver(
+            100,
+            Semver {
+                major: 2,
+                minor: 5,
+                patch: 0,
+            },
+        ));
+        assert_eq!(store.semver_string_for(100).as_deref(), Some("2.5.0"));
+    }
+
+    #[test]
+    fn semver_string_for_hotfix_collision_appends_build_number() {
+        let mut store = VersionedStore::new();
+        let semver = Semver {
+            major: 2,
+            minor: 5,
+            patch: 0,
+        };
+        store.add_version(make_gd_with_semver(48652, semver));
+        store.add_version(make_gd_with_semver(48791, semver));
+
+        // Earliest build keeps the plain marketing semver.
+        assert_eq!(store.semver_string_for(48652).as_deref(), Some("2.5.0"));
+        // Later build sharing the same semver disambiguates with its build number.
+        assert_eq!(
+            store.semver_string_for(48791).as_deref(),
+            Some("2.5.0.48791")
+        );
+    }
+
+    #[test]
+    fn semver_string_for_second_hotfix_appends_its_own_build_number() {
+        let mut store = VersionedStore::new();
+        let semver = Semver {
+            major: 2,
+            minor: 5,
+            patch: 0,
+        };
+        store.add_version(make_gd_with_semver(48652, semver));
+        store.add_version(make_gd_with_semver(48791, semver));
+        store.add_version(make_gd_with_semver(48999, semver));
+
+        assert_eq!(store.semver_string_for(48652).as_deref(), Some("2.5.0"));
+        assert_eq!(
+            store.semver_string_for(48791).as_deref(),
+            Some("2.5.0.48791")
+        );
+        assert_eq!(
+            store.semver_string_for(48999).as_deref(),
+            Some("2.5.0.48999")
+        );
     }
 
     // ---------------------------------------------------------------------------
