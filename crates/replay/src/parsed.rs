@@ -3,7 +3,7 @@
 use crate::data::chunks::DataAutoChunk;
 use crate::data::{Replay as ReplayData, Span};
 use crate::errors::ParseError;
-use crate::map::{map_from_data, Map};
+use crate::map::{map_from_data, Map, MapPoint, StartingPosition};
 use crate::player::{player_from_data, Player};
 use nom_locate::LocatedSpan;
 use nom_tracable::TracableInfo;
@@ -100,6 +100,19 @@ impl Replay {
     pub fn map_localized_description_id(&self) -> &str {
         self.map.localized_description_id()
     }
+    /// The map's starting positions. See `Map::starting_positions` for more information.
+    pub fn starting_positions(&self) -> &[StartingPosition] {
+        self.map.starting_positions()
+    }
+    /// All territory points on the map. See `Map::territory_points` for more information.
+    pub fn territory_points(&self) -> &[MapPoint] {
+        self.map.territory_points()
+    }
+    /// The subset of territory points that award victory points. See `Map::victory_points` for
+    /// more information.
+    pub fn victory_points(&self) -> &[MapPoint] {
+        self.map.victory_points()
+    }
     /// A list of all players who participated in this match.
     pub fn players(&self) -> Vec<Player> {
         self.players.clone()
@@ -115,6 +128,8 @@ impl Replay {
 fn replay_from_data(data: &ReplayData) -> Replay {
     let commands = data.commands();
     let messages = data.messages();
+    let map = map_from_data(data.map_data());
+    let starting_positions = map.starting_positions().to_vec();
 
     Replay {
         version: data.header.version,
@@ -122,14 +137,14 @@ fn replay_from_data(data: &ReplayData) -> Replay {
         game_type: game_type_from_data(data),
         matchhistory_id: matchhistory_id_from_data(data),
         mod_uuid: data.game_data().mod_uuid,
-        map: map_from_data(data.map_data()),
         length: data.command_ticks().count(),
         players: data
             .game_data()
             .players
             .iter()
-            .map(|player| player_from_data(player, &messages, &commands))
+            .map(|player| player_from_data(player, &messages, &commands, &starting_positions))
             .collect(),
+        map,
     }
 }
 

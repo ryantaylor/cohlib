@@ -2,6 +2,7 @@
 
 use crate::command::Command;
 use crate::data::Player as PlayerData;
+use crate::map::StartingPosition;
 use crate::message::Message;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -26,6 +27,7 @@ pub struct Player {
     profile_id: Option<u64>,
     messages: Vec<Message>,
     commands: Vec<Command>,
+    starting_position: Option<StartingPosition>,
 }
 
 impl Player {
@@ -119,12 +121,20 @@ impl Player {
             })
             .collect()
     }
+
+    /// The player's starting position on the map, or `None` if the replay was recorded before
+    /// this data was written to the replay file. See `Map::starting_positions` for the
+    /// coordinate convention.
+    pub fn starting_position(&self) -> Option<&StartingPosition> {
+        self.starting_position.as_ref()
+    }
 }
 
 pub(crate) fn player_from_data(
     player_data: &PlayerData,
     messages: &HashMap<String, Vec<Message>>,
     commands: &HashMap<u32, Vec<Command>>,
+    starting_positions: &[StartingPosition],
 ) -> Player {
     let mut player = Player {
         name: player_data.name.clone(),
@@ -138,6 +148,10 @@ pub(crate) fn player_from_data(
         battlegroup: None,
         battlegroup_selected_at: None,
         ai_takeover_at: None,
+        starting_position: starting_positions
+            .iter()
+            .find(|position| position.index() == player_data.id)
+            .cloned(),
     };
 
     if player.human {
