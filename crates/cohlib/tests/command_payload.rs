@@ -24,6 +24,15 @@ const DECODED_TYPES: &[CommandType] = &[
     CommandType::CMD_Upgrade,
     CommandType::CMD_CancelConstruction,
     CommandType::CMD_CancelProduction,
+    // PR 2
+    CommandType::SCMD_Retreat,
+    CommandType::SCMD_Stop,
+    CommandType::PCMD_TentativeUpgradeRemoveAll,
+    CommandType::SCMD_UnloadSquads,
+    CommandType::CMD_UnloadSquads,
+    CommandType::PCMD_Surrender,
+    CommandType::SCMD_CancelProduction,
+    CommandType::PCMD_CancelProduction,
 ];
 
 /// Fixtures with pre-existing parse failures unrelated to command parsing (present on
@@ -65,15 +74,17 @@ fn every_fixture_parses_without_panicking() {
 }
 
 /// A handful of real commands carry something other than the expected parameter shape:
-/// `CMD_BuildSquad`, `CMD_Upgrade` and `PCMD_PlaceAndConstructEntities` occasionally
-/// carry the exact same 17-byte blob, repeated verbatim, all in `unusual_cpu_items.rec`
-/// — some AI/CPU-issued command shape not yet understood.
+/// - `CMD_BuildSquad`, `CMD_Upgrade` and `PCMD_PlaceAndConstructEntities` occasionally
+///   carry the exact same 17-byte blob, repeated verbatim, all in
+///   `unusual_cpu_items.rec` — some AI/CPU-issued command shape not yet understood.
+/// - `SCMD_Retreat`: a small fraction carry an unexpected parameter block instead of
+///   being parameter-less.
 ///
 /// Structurally these are normal, fully-accounted-for parameter blocks (see
 /// `every_fixture_parses_without_panicking`) — just not a shape this crate decodes yet,
 /// rather than malformed data. Everything else routed to a decoder in `DECODED_TYPES`
 /// is expected to fully decode. See `CommandData::parse_pbgid` and
-/// `CommandData::parse_sourced_pbgid`.
+/// `CommandData::parse_squads`.
 #[test]
 fn decoded_command_types_only_fall_back_to_unknown_for_known_exceptions() {
     let mut unknown_counts: HashMap<CommandType, usize> = HashMap::new();
@@ -100,6 +111,7 @@ fn decoded_command_types_only_fall_back_to_unknown_for_known_exceptions() {
             (CommandType::CMD_BuildSquad, 8),
             (CommandType::CMD_Upgrade, 2),
             (CommandType::PCMD_PlaceAndConstructEntities, 5),
+            (CommandType::SCMD_Retreat, 16),
         ]),
         "unexpected Unknown fallback for a command type this crate claims to decode; \
          if this is a newly discovered real variant, add it to the exception list with \

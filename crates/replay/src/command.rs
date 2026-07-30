@@ -1,7 +1,7 @@
 //! Wrapper for Company of Heroes 3 player commands.
 
 use crate::{
-    command_data::{Empty, Pbgid, Sourced, SourcedIndex, SourcedPbgid, Unknown},
+    command_data::{Empty, Pbgid, Sourced, SourcedIndex, SourcedPbgid, Squads, Unknown},
     command_type::CommandType,
     data::ticks,
 };
@@ -21,8 +21,21 @@ pub enum Command {
     CancelConstruction(Sourced),
     CancelProduction(SourcedIndex),
     ConstructEntity(Pbgid),
+    /// A player clearing all pending (not-yet-purchased) battlegroup ability
+    /// selections, e.g. `PCMD_TentativeUpgradeRemoveAll`.
+    DeselectAllBattlegroupAbilities(Squads),
+    /// One or more squads retreating to base.
+    Retreat(Squads),
     SelectBattlegroup(Pbgid),
     SelectBattlegroupAbility(Pbgid),
+    /// One or more squads halting their current action.
+    Stop(Squads),
+    /// A player surrendering the match.
+    Surrender(Squads),
+    /// A transport unloading all of its passengers, whether issued by the transport
+    /// entity (`CMD_UnloadSquads`) or by the passenger squads themselves
+    /// (`SCMD_UnloadSquads`) — both produce this variant since the effect is the same.
+    UnloadSquads(Squads),
     UseAbility(SourcedPbgid),
     UseBattlegroupAbility(Pbgid),
     Unknown(Unknown),
@@ -92,18 +105,40 @@ impl Command {
             },
             ticks::CommandData::SourcedIndex(source_identifier, queue_index) => {
                 match command.action_type {
-                    CommandType::CMD_CancelProduction => Self::CancelProduction(SourcedIndex::new(
-                        tick,
-                        command.index,
-                        source_identifier,
-                        queue_index,
-                    )),
+                    // SCMD_/PCMD_CancelProduction cancel a queued production item the
+                    // same way CMD_CancelProduction does, just issued from a squad's or
+                    // the player's UI instead of a building's — same effect, same
+                    // variant.
+                    CommandType::CMD_CancelProduction
+                    | CommandType::SCMD_CancelProduction
+                    | CommandType::PCMD_CancelProduction => Self::CancelProduction(
+                        SourcedIndex::new(tick, command.index, source_identifier, queue_index),
+                    ),
                     _ => panic!(
                         "a sourced command isn't being handled here! command type {:?}",
                         command.action_type
                     ),
                 }
             }
+            ticks::CommandData::SourceOnly(source) => match command.action_type {
+                CommandType::SCMD_Retreat => {
+                    Self::Retreat(Squads::new(tick, command.index, source))
+                }
+                CommandType::SCMD_Stop => Self::Stop(Squads::new(tick, command.index, source)),
+                CommandType::SCMD_UnloadSquads | CommandType::CMD_UnloadSquads => {
+                    Self::UnloadSquads(Squads::new(tick, command.index, source))
+                }
+                CommandType::PCMD_TentativeUpgradeRemoveAll => {
+                    Self::DeselectAllBattlegroupAbilities(Squads::new(tick, command.index, source))
+                }
+                CommandType::PCMD_Surrender => {
+                    Self::Surrender(Squads::new(tick, command.index, source))
+                }
+                _ => panic!(
+                    "a source-only command isn't being handled here! command type {:?}",
+                    command.action_type
+                ),
+            },
             ticks::CommandData::Unknown => {
                 Self::Unknown(Unknown::new(tick, command.index, command.action_type))
             }

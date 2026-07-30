@@ -19,6 +19,10 @@ pub enum CommandData {
     SourcedPbgid(u32, u16),
     Sourced(u16),
     SourcedIndex(u16, u32),
+    /// Header and source only, with the full `Source` preserved (unlike `Sourced`,
+    /// which keeps only the legacy truncated identifier). Used for commands whose
+    /// source can legitimately be a multi-squad selection.
+    SourceOnly(Source),
     Unknown,
 }
 
@@ -94,6 +98,23 @@ impl CommandData {
         )(input)
     }
 
+    /// Header and source only, preserving the full `Source` (see
+    /// [`CommandData::SourceOnly`]) rather than truncating it to the legacy `u16` the
+    /// way [`Self::parse_sourced`] does. These commands are usually parameter-less, but
+    /// a small fraction of `SCMD_Retreat` occurrences carry an unexpected parameter
+    /// block instead — a real, recognized-but-not-yet-decoded variant rather than
+    /// malformed data, so it decodes as `Unknown` rather than panicking. See
+    /// `crates/cohlib/tests/command_payload.rs`.
+    pub fn parse_squads(input: Span) -> ParserResult<CommandData> {
+        map(
+            tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
+            |(_, source, block)| match block {
+                None => CommandData::SourceOnly(source),
+                Some(_) => CommandData::Unknown,
+            },
+        )(input)
+    }
+
     pub fn parse_unknown(input: Span) -> ParserResult<CommandData> {
         map(rest, |_| CommandData::Unknown)(input)
     }
@@ -111,7 +132,15 @@ impl CommandData {
                 Self::parse_sourced_pbgid
             }
             CommandType::CMD_CancelConstruction => Self::parse_sourced,
-            CommandType::CMD_CancelProduction => Self::parse_sourced_index,
+            CommandType::CMD_CancelProduction
+            | CommandType::SCMD_CancelProduction
+            | CommandType::PCMD_CancelProduction => Self::parse_sourced_index,
+            CommandType::SCMD_Retreat
+            | CommandType::SCMD_Stop
+            | CommandType::PCMD_TentativeUpgradeRemoveAll
+            | CommandType::SCMD_UnloadSquads
+            | CommandType::CMD_UnloadSquads
+            | CommandType::PCMD_Surrender => Self::parse_squads,
             _ => Self::parse_unknown,
         }
     }

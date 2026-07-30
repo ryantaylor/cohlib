@@ -6,6 +6,7 @@ mod source;
 mod sourced;
 mod sourced_index;
 mod sourced_pbgid;
+mod squads;
 mod unknown;
 
 pub use crate::command_data::empty::Empty;
@@ -14,4 +15,5 @@ pub use crate::command_data::source::Source;
 pub use crate::command_data::sourced::Sourced;
 pub use crate::command_data::sourced_index::SourcedIndex;
 pub use crate::command_data::sourced_pbgid::SourcedPbgid;
+pub use crate::command_data::squads::Squads;
 pub use crate::command_data::unknown::Unknown;
