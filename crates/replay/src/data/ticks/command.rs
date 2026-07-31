@@ -30,6 +30,16 @@ pub enum CommandData {
     /// Header, source, and zero or more targeting values (position, facing,
     /// orientation, target entity).
     Targeted(Source, TargetValues),
+    /// A pbgid and zero or more targeting values, with no source (used by
+    /// `PCMD_Ability`, whose source is always the issuing player).
+    PbgidTargeted(u32, TargetValues),
+    /// A pbgid, legacy source identifier, and zero or more targeting values (used by
+    /// `CMD_Ability`).
+    SourcedPbgidTargeted(u32, u16, TargetValues),
+    /// `SCMD_Ability`'s payload: a source, an optional pbgid (absent when this command
+    /// continues/updates an already-active ability's target rather than starting a new
+    /// one), and zero or more targeting values.
+    Ability(Source, Option<u32>, TargetValues),
     Unknown,
 }
 
@@ -167,6 +177,57 @@ impl CommandData {
         )(input)
     }
 
+    /// Header, source, then a pbgid-and-targets block (see `parse_pbgid_and_targets`).
+    /// `PCMD_Ability`'s source is discarded (always the issuing player, already
+    /// available elsewhere) to match [`Self::parse_pbgid`].
+    pub fn parse_pbgid_targeted(input: Span) -> ParserResult<CommandData> {
+        map(
+            tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
+            |(_, _source, block)| match parse_pbgid_and_targets(&expect_block(block)) {
+                Some((pbgid, targets)) => CommandData::PbgidTargeted(pbgid, targets),
+                None => CommandData::Unknown,
+            },
+        )(input)
+    }
+
+    /// Header, source, then a pbgid-and-targets block (see `parse_pbgid_and_targets`),
+    /// preserving the legacy source identifier like [`Self::parse_sourced_pbgid`] does.
+    pub fn parse_sourced_pbgid_targeted(input: Span) -> ParserResult<CommandData> {
+        map(
+            tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
+            |(_, source, block)| match parse_pbgid_and_targets(&expect_block(block)) {
+                Some((pbgid, targets)) => {
+                    CommandData::SourcedPbgidTargeted(pbgid, source.legacy_identifier(), targets)
+                }
+                None => CommandData::Unknown,
+            },
+        )(input)
+    }
+
+    /// `SCMD_Ability`'s payload is one of two shapes: block kind `0x01` carries only
+    /// targeting values with no pbgid at all (continuing/updating an already-active
+    /// ability's target, as best understood); kinds `0x23`/`0x24`/`0x29` carry a pbgid
+    /// (see `parse_pbgid_and_targets`). This is the only command type observed using
+    /// both.
+    pub fn parse_ability(input: Span) -> ParserResult<CommandData> {
+        map(
+            tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
+            |(_, source, block)| {
+                let result = match block {
+                    None => Some((None, TargetValues::default())),
+                    Some(block) if block.kind == 0x01 => Some((None, parse_targets(block.data))),
+                    Some(block) => {
+                        parse_pbgid_and_targets(&block).map(|(pbgid, t)| (Some(pbgid), t))
+                    }
+                };
+                match result {
+                    Some((pbgid, targets)) => CommandData::Ability(source, pbgid, targets),
+                    None => CommandData::Unknown,
+                }
+            },
+        )(input)
+    }
+
     pub fn parse_unknown(input: Span) -> ParserResult<CommandData> {
         map(rest, |_| CommandData::Unknown)(input)
     }
@@ -176,12 +237,15 @@ impl CommandData {
     ) -> impl FnMut(Span) -> ParserResult<CommandData> {
         match command_type {
             CommandType::PCMD_AIPlayer => Self::parse_empty,
-            CommandType::PCMD_Ability
-            | CommandType::PCMD_InstantUpgrade
+            CommandType::PCMD_InstantUpgrade
             | CommandType::PCMD_TentativeUpgrade
             | CommandType::PCMD_PlaceAndConstructEntities => Self::parse_pbgid,
-            CommandType::CMD_BuildSquad | CommandType::CMD_Ability | CommandType::CMD_Upgrade => {
-                Self::parse_sourced_pbgid
+            CommandType::CMD_BuildSquad | CommandType::CMD_Upgrade => Self::parse_sourced_pbgid,
+            CommandType::PCMD_Ability => Self::parse_pbgid_targeted,
+            CommandType::CMD_Ability => Self::parse_sourced_pbgid_targeted,
+            CommandType::SCMD_Ability => Self::parse_ability,
+            CommandType::SCMD_StopAbility | CommandType::CMD_StopAbility => {
+                Self::parse_source_pbgid
             }
             CommandType::CMD_CancelConstruction => Self::parse_sourced,
             CommandType::CMD_CancelProduction
@@ -238,6 +302,23 @@ fn parse_targets(data: Span) -> TargetValues {
         Ok((_, targets)) => targets,
         Err(e) => panic!("failed to parse targeting values: {e:?}"),
     }
+}
+
+/// Parses `[pbgid value][kind-specific skip][target value chain]`, the shape shared by
+/// every "ability" style block kind (`0x23`, `0x24`, `0x29`): `0x23` has no prefix
+/// after the pbgid, `0x24` has 6 not-yet-understood bytes, `0x29` has 1. Validated
+/// against every occurrence of these block kinds in the corpus examined during
+/// development. Returns `None` (rather than panicking) if the first value isn't a
+/// pbgid — the same known AI/CPU-issued anomaly documented on
+/// [`CommandData::parse_pbgid`] shows up here too.
+fn parse_pbgid_and_targets(block: &ParamBlock) -> Option<(u32, TargetValues)> {
+    let (after_pbgid, pbgid) = Value::try_pbgid_with_rest(block.data)?;
+    let skip: u32 = match block.kind {
+        0x24 => 6,
+        0x29 => 1,
+        _ => 0,
+    };
+    Some((pbgid, parse_targets(skip_bytes(after_pbgid, skip))))
 }
 
 #[derive(Debug, Clone)]

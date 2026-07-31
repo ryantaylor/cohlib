@@ -66,6 +66,17 @@ impl Value {
         }
     }
 
+    /// Like [`Self::try_pbgid`], but also returns the remaining input after the pbgid
+    /// so parsing can continue (e.g. to read further values that follow it). Returns
+    /// `None` without consuming any input if the value isn't a pbgid.
+    pub(crate) fn try_pbgid_with_rest(input: Span) -> Option<(Span, u32)> {
+        match Self::parse(input) {
+            Ok((rest, Value::Pbgid(pbgid))) => Some((rest, pbgid)),
+            Ok(_) => None,
+            Err(e) => panic!("failed to read expected value: {e:?}"),
+        }
+    }
+
     /// Greedily parses a chain of targeting-relevant values (position, facing, entity
     /// reference, orientation) from the front of `input`, stopping at the first tag
     /// that isn't one of those four. Movement commands in particular carry additional

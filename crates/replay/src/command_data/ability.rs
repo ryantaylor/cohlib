@@ -1,27 +1,30 @@
-use crate::command_data::{Orientation, Position};
+use crate::command_data::{Orientation, Position, Source};
 use serde::{Deserialize, Serialize};
 
-/// A simple command format that contains an entity pbgid, and optionally targeting
-/// fields (position, facing, orientation, target entity) for the handful of command
-/// types whose payload carries them — `None` for commands whose payload doesn't.
+/// A command format used only by `SCMD_Ability`, which — uniquely among decoded command
+/// types — sometimes carries an ability pbgid (with optional targeting fields) and
+/// sometimes carries only targeting fields with no pbgid at all (best understood as
+/// continuing or updating an already-active ability's target).
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-pub struct Pbgid {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Ability {
     tick: u32,
     index: u32,
-    pbgid: u32,
+    source: Source,
+    pbgid: Option<u32>,
     position: Option<Position>,
     facing: Option<f32>,
     orientation: Option<Orientation>,
     entity: Option<u32>,
 }
 
-impl Pbgid {
+impl Ability {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         tick: u32,
         index: u32,
-        pbgid: u32,
+        source: Source,
+        pbgid: Option<u32>,
         position: Option<Position>,
         facing: Option<f32>,
         orientation: Option<Orientation>,
@@ -30,6 +33,7 @@ impl Pbgid {
         Self {
             tick,
             index,
+            source,
             pbgid,
             position,
             facing,
@@ -52,10 +56,13 @@ impl Pbgid {
     pub fn index(&self) -> u32 {
         self.index
     }
-    /// Internal ID that uniquely identifies entity associated with the command. This value can be
-    /// matched to CoH3 attribute files in order to determine the entity in question. Note that,
-    /// while rare, it is possible that this value may change between patches for the same entity.
-    pub fn pbgid(&self) -> u32 {
+    /// Who or what issued this command.
+    pub fn source(&self) -> &Source {
+        &self.source
+    }
+    /// Internal ID identifying the ability, if this command carried one — absent when
+    /// this command is continuing or updating the target of an already-active ability.
+    pub fn pbgid(&self) -> Option<u32> {
         self.pbgid
     }
     /// The target world-space position, if this command carried one.

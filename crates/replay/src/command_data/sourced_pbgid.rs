@@ -1,6 +1,10 @@
+use crate::command_data::{Orientation, Position};
 use serde::{Deserialize, Serialize};
 
-/// A command format with both an entity pbgid and a source identifier.
+/// A command format with an entity pbgid and a source identifier, and optionally
+/// targeting fields (position, facing, orientation, target entity) for the handful of
+/// command types whose payload carries them — `None` for commands whose payload
+/// doesn't.
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct SourcedPbgid {
@@ -8,15 +12,33 @@ pub struct SourcedPbgid {
     index: u32,
     pbgid: u32,
     source_identifier: u16,
+    position: Option<Position>,
+    facing: Option<f32>,
+    orientation: Option<Orientation>,
+    entity: Option<u32>,
 }
 
 impl SourcedPbgid {
-    pub(crate) fn new(tick: u32, index: u32, pbgid: u32, source_identifier: u16) -> Self {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        tick: u32,
+        index: u32,
+        pbgid: u32,
+        source_identifier: u16,
+        position: Option<Position>,
+        facing: Option<f32>,
+        orientation: Option<Orientation>,
+        entity: Option<u32>,
+    ) -> Self {
         Self {
             tick,
             index,
             pbgid,
             source_identifier,
+            position,
+            facing,
+            orientation,
+            entity,
         }
     }
 
@@ -45,5 +67,21 @@ impl SourcedPbgid {
     /// use this value to link this command to that entity.
     pub fn source_identifier(&self) -> u16 {
         self.source_identifier
+    }
+    /// The target world-space position, if this command carried one.
+    pub fn position(&self) -> Option<Position> {
+        self.position
+    }
+    /// The target facing angle in radians, if this command carried one.
+    pub fn facing(&self) -> Option<f32> {
+        self.facing
+    }
+    /// The target orientation, if this command carried one.
+    pub fn orientation(&self) -> Option<Orientation> {
+        self.orientation
+    }
+    /// The internal engine ID of the targeted entity, if this command carried one.
+    pub fn entity(&self) -> Option<u32> {
+        self.entity
     }
 }

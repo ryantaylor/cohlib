@@ -2,8 +2,8 @@
 
 use crate::{
     command_data::{
-        Empty, Orientation, Pbgid, Position, SourcePbgid, Sourced, SourcedIndex, SourcedPbgid,
-        Squads, Targeted, Unknown,
+        Ability, Empty, Orientation, Pbgid, Position, SourcePbgid, Sourced, SourcedIndex,
+        SourcedPbgid, Squads, Targeted, Unknown,
     },
     command_type::CommandType,
     data::ticks::{self, value::TargetValues},
@@ -66,6 +66,9 @@ pub enum Command {
     SelectBattlegroupAbility(Pbgid),
     /// One or more squads halting their current action.
     Stop(Squads),
+    /// A squad or entity stopping its currently active ability, `SCMD_StopAbility` or
+    /// `CMD_StopAbility` — both produce this variant since the effect is the same.
+    StopAbility(SourcePbgid),
     /// A player surrendering the match.
     Surrender(Squads),
     /// A squad disembarking from a transport, `SCMD_Unload`.
@@ -78,6 +81,9 @@ pub enum Command {
     /// `BuildGlobalUpgrade`.
     UpgradeSquad(SourcePbgid),
     UseAbility(SourcedPbgid),
+    /// A squad using an ability, `SCMD_Ability` — see [`Ability`] on why its pbgid is
+    /// optional, unlike [`Self::UseAbility`].
+    UseAbilitySquad(Ability),
     UseBattlegroupAbility(Pbgid),
     Unknown(Unknown),
 }
@@ -93,18 +99,33 @@ impl Command {
                 ),
             },
             ticks::CommandData::Pbgid(pbgid) => match command.action_type {
-                CommandType::PCMD_Ability => {
-                    Self::UseBattlegroupAbility(Pbgid::new(tick, command.index, pbgid))
-                }
-                CommandType::PCMD_InstantUpgrade => {
-                    Self::SelectBattlegroup(Pbgid::new(tick, command.index, pbgid))
-                }
-                CommandType::PCMD_PlaceAndConstructEntities => {
-                    Self::ConstructEntity(Pbgid::new(tick, command.index, pbgid))
-                }
-                CommandType::PCMD_TentativeUpgrade => {
-                    Self::SelectBattlegroupAbility(Pbgid::new(tick, command.index, pbgid))
-                }
+                CommandType::PCMD_InstantUpgrade => Self::SelectBattlegroup(Pbgid::new(
+                    tick,
+                    command.index,
+                    pbgid,
+                    None,
+                    None,
+                    None,
+                    None,
+                )),
+                CommandType::PCMD_PlaceAndConstructEntities => Self::ConstructEntity(Pbgid::new(
+                    tick,
+                    command.index,
+                    pbgid,
+                    None,
+                    None,
+                    None,
+                    None,
+                )),
+                CommandType::PCMD_TentativeUpgrade => Self::SelectBattlegroupAbility(Pbgid::new(
+                    tick,
+                    command.index,
+                    pbgid,
+                    None,
+                    None,
+                    None,
+                    None,
+                )),
                 _ => panic!(
                     "a pbgid command isn't being handled here! command type {:?}",
                     command.action_type
@@ -112,23 +133,25 @@ impl Command {
             },
             ticks::CommandData::SourcedPbgid(pbgid, source_identifier) => match command.action_type
             {
-                CommandType::CMD_Ability => Self::UseAbility(SourcedPbgid::new(
-                    tick,
-                    command.index,
-                    pbgid,
-                    source_identifier,
-                )),
                 CommandType::CMD_BuildSquad => Self::BuildSquad(SourcedPbgid::new(
                     tick,
                     command.index,
                     pbgid,
                     source_identifier,
+                    None,
+                    None,
+                    None,
+                    None,
                 )),
                 CommandType::CMD_Upgrade => Self::BuildGlobalUpgrade(SourcedPbgid::new(
                     tick,
                     command.index,
                     pbgid,
                     source_identifier,
+                    None,
+                    None,
+                    None,
+                    None,
                 )),
                 _ => panic!(
                     "a sourced pbgid command isn't being handled here! command type {:?}",
@@ -187,6 +210,12 @@ impl Command {
                 CommandType::SCMD_ReinforceUnit => {
                     Self::Reinforce(SourcePbgid::new(tick, command.index, source, pbgid))
                 }
+                // SCMD_/CMD_StopAbility stop the ability referenced by pbgid the same
+                // way regardless of whether it was issued by a squad or an entity —
+                // same effect, same variant.
+                CommandType::SCMD_StopAbility | CommandType::CMD_StopAbility => {
+                    Self::StopAbility(SourcePbgid::new(tick, command.index, source, pbgid))
+                }
                 _ => panic!(
                     "a source pbgid command isn't being handled here! command type {:?}",
                     command.action_type
@@ -225,6 +254,64 @@ impl Command {
                     ),
                 }
             }
+            ticks::CommandData::PbgidTargeted(pbgid, targets) => match command.action_type {
+                CommandType::PCMD_Ability => {
+                    let (position, facing, orientation, entity) = split_targets(targets);
+                    Self::UseBattlegroupAbility(Pbgid::new(
+                        tick,
+                        command.index,
+                        pbgid,
+                        position,
+                        facing,
+                        orientation,
+                        entity,
+                    ))
+                }
+                _ => panic!(
+                    "a pbgid-targeted command isn't being handled here! command type {:?}",
+                    command.action_type
+                ),
+            },
+            ticks::CommandData::SourcedPbgidTargeted(pbgid, source_identifier, targets) => {
+                match command.action_type {
+                    CommandType::CMD_Ability => {
+                        let (position, facing, orientation, entity) = split_targets(targets);
+                        Self::UseAbility(SourcedPbgid::new(
+                            tick,
+                            command.index,
+                            pbgid,
+                            source_identifier,
+                            position,
+                            facing,
+                            orientation,
+                            entity,
+                        ))
+                    }
+                    _ => panic!(
+                        "a sourced pbgid-targeted command isn't being handled here! command type {:?}",
+                        command.action_type
+                    ),
+                }
+            }
+            ticks::CommandData::Ability(source, pbgid, targets) => match command.action_type {
+                CommandType::SCMD_Ability => {
+                    let (position, facing, orientation, entity) = split_targets(targets);
+                    Self::UseAbilitySquad(Ability::new(
+                        tick,
+                        command.index,
+                        source,
+                        pbgid,
+                        position,
+                        facing,
+                        orientation,
+                        entity,
+                    ))
+                }
+                _ => panic!(
+                    "an ability command isn't being handled here! command type {:?}",
+                    command.action_type
+                ),
+            },
             ticks::CommandData::Unknown => {
                 Self::Unknown(Unknown::new(tick, command.index, command.action_type))
             }

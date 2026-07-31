@@ -52,6 +52,10 @@ const DECODED_TYPES: &[CommandType] = &[
     CommandType::SCMD_BuildStructure,
     CommandType::SCMD_Recrew,
     CommandType::PCMD_DetonateCharges,
+    // PR 5
+    CommandType::SCMD_Ability,
+    CommandType::SCMD_StopAbility,
+    CommandType::CMD_StopAbility,
 ];
 
 /// Fixtures with pre-existing parse failures unrelated to command parsing (present on
@@ -93,10 +97,10 @@ fn every_fixture_parses_without_panicking() {
 }
 
 /// A handful of real commands carry something other than the expected parameter shape:
-/// - `CMD_BuildSquad`, `CMD_Upgrade`, `PCMD_PlaceAndConstructEntities` and
-///   `SCMD_ReinforceUnit` occasionally carry the exact same 17-byte blob, repeated
-///   verbatim, all in `unusual_cpu_items.rec` — some AI/CPU-issued command shape not
-///   yet understood.
+/// - `CMD_BuildSquad`, `CMD_Upgrade`, `PCMD_PlaceAndConstructEntities`,
+///   `SCMD_ReinforceUnit` and `SCMD_Ability` occasionally carry the exact same 17-byte
+///   blob, repeated verbatim, all in `unusual_cpu_items.rec` — some AI/CPU-issued
+///   command shape not yet understood.
 /// - `SCMD_Retreat`: a small fraction carry an unexpected parameter block instead of
 ///   being parameter-less.
 ///
@@ -133,6 +137,7 @@ fn decoded_command_types_only_fall_back_to_unknown_for_known_exceptions() {
             (CommandType::PCMD_PlaceAndConstructEntities, 5),
             (CommandType::SCMD_Retreat, 16),
             (CommandType::SCMD_ReinforceUnit, 1),
+            (CommandType::SCMD_Ability, 1),
         ]),
         "unexpected Unknown fallback for a command type this crate claims to decode; \
          if this is a newly discovered real variant, add it to the exception list with \
