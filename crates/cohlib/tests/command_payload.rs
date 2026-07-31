@@ -56,6 +56,9 @@ const DECODED_TYPES: &[CommandType] = &[
     CommandType::SCMD_Ability,
     CommandType::SCMD_StopAbility,
     CommandType::CMD_StopAbility,
+    // PR 7
+    CommandType::PCMD_AIPlayer_ResourceBonus,
+    CommandType::PCMD_BroadcastMessage,
 ];
 
 /// Fixtures with pre-existing parse failures unrelated to command parsing (present on
@@ -98,11 +101,11 @@ fn every_fixture_parses_without_panicking() {
 
 /// A handful of real commands carry something other than the expected parameter shape:
 /// - `CMD_BuildSquad`, `CMD_Upgrade`, `PCMD_PlaceAndConstructEntities`,
-///   `SCMD_ReinforceUnit` and `SCMD_Ability` occasionally carry the exact same 17-byte
-///   blob, repeated verbatim, all in `unusual_cpu_items.rec` — some AI/CPU-issued
-///   command shape not yet understood.
-/// - `SCMD_Retreat`: a small fraction carry an unexpected parameter block instead of
-///   being parameter-less.
+///   `SCMD_ReinforceUnit` and `SCMD_Ability`: the exact same 17-byte blob, repeated
+///   verbatim, all in `unusual_cpu_items.rec` — some AI/CPU-issued command shape not
+///   yet understood.
+/// - `SCMD_Retreat`: a small fraction (about 1% corpus-wide) carry a target position
+///   instead of being parameter-less, all in `v44736_retreat_to_position.rec`.
 ///
 /// Structurally these are normal, fully-accounted-for parameter blocks (see
 /// `every_fixture_parses_without_panicking`) — just not a shape this crate decodes yet,
@@ -142,5 +145,41 @@ fn decoded_command_types_only_fall_back_to_unknown_for_known_exceptions() {
         "unexpected Unknown fallback for a command type this crate claims to decode; \
          if this is a newly discovered real variant, add it to the exception list with \
          a comment explaining why, otherwise it's a parsing regression"
+    );
+}
+
+/// Camera track records (`DCMD_CameraTrack`/`DCMD_COUNT`) are not player commands: they
+/// must never appear in `Player::commands()` (as `Command::Unknown` or otherwise), and
+/// `Player::camera_tracks()` must actually be populated from the same underlying data.
+#[test]
+fn camera_tracks_are_excluded_from_commands_and_populated_separately() {
+    let mut total_commands = 0;
+    let mut total_camera_tracks = 0;
+
+    for path in fixture_paths() {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let data = fs::read(&path).unwrap_or_else(|e| panic!("read {name}: {e}"));
+        let replay = cohlib::parse_replay(&data).unwrap_or_else(|e| panic!("{name}: {e}"));
+        for player in replay.players() {
+            for command in player.commands() {
+                total_commands += 1;
+                if let Command::Unknown(unknown) = command {
+                    assert!(
+                        !matches!(
+                            unknown.action_type(),
+                            CommandType::DCMD_CameraTrack | CommandType::DCMD_COUNT
+                        ),
+                        "{name}: a camera track command leaked into Player::commands()"
+                    );
+                }
+            }
+            total_camera_tracks += player.camera_tracks().len();
+        }
+    }
+
+    assert!(total_commands > 0, "expected at least one player command");
+    assert!(
+        total_camera_tracks > 0,
+        "expected at least one camera track"
     );
 }

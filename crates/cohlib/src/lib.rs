@@ -4,7 +4,8 @@ pub use build_order::{extract_build_order, BuildAction, BuildActionKind, BuildOr
 pub use data::{GameData, LocaleStore, ScreenNameFormatter, Semver, Version, VersionedStore};
 pub use error::Error;
 pub use replay::command_data::{
-    Ability, Construction, Orientation, Position, Source, SourcePbgid, Squads, Targeted,
+    Ability, BroadcastMessage, CameraTrack, Construction, Orientation, Position, ResourceBonus,
+    Source, SourcePbgid, Squads, Targeted,
 };
 pub use replay::{
     parse_replay, Command, CommandType, Faction, GameType, Map, MapPoint, Message, Player, Replay,

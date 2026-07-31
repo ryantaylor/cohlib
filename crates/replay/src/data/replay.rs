@@ -1,7 +1,9 @@
 use crate::command::Command;
+use crate::command_data::CameraTrack;
+use crate::command_type::CommandType;
 use crate::data::chunks::Chunk::{DataAuto, DataData, DataSdsc};
 use crate::data::chunks::{Chunk, DataAutoChunk, DataDataChunk, DataSdscChunk};
-use crate::data::ticks::{CommandTick, Tick};
+use crate::data::ticks::{CommandData, CommandTick, Tick};
 use crate::data::{Chunky, Header};
 use crate::data::{ParserResult, Span};
 use crate::message::Message;
@@ -111,16 +113,51 @@ impl Replay {
         })
     }
 
+    /// Player-issued commands, keyed by player id. Camera track records
+    /// (`DCMD_CameraTrack`/`DCMD_COUNT`) are not player commands — see
+    /// [`Self::camera_tracks`] — and are excluded here, which removes the large
+    /// majority of records in the underlying command stream.
     pub fn commands(&self) -> HashMap<u32, Vec<Command>> {
         self.command_ticks()
             .enumerate()
             .fold(HashMap::new(), |mut acc, (idx, tick)| {
                 for bundle in &tick.bundles {
                     for command in &bundle.commands {
+                        if is_camera_track(command.action_type) {
+                            continue;
+                        }
                         let player_commands = acc.entry(command.player_id as u32).or_default();
                         player_commands.push(Command::from_data_command_at_tick(
                             command.clone(),
                             idx as u32 + 1,
+                        ));
+                    }
+                }
+                acc
+            })
+    }
+
+    /// Per-player camera telemetry, keyed by player id — see [`CameraTrack`] on why
+    /// this is kept separate from [`Self::commands`].
+    pub fn camera_tracks(&self) -> HashMap<u32, Vec<CameraTrack>> {
+        self.command_ticks()
+            .enumerate()
+            .fold(HashMap::new(), |mut acc, (idx, tick)| {
+                for bundle in &tick.bundles {
+                    for command in &bundle.commands {
+                        if !is_camera_track(command.action_type) {
+                            continue;
+                        }
+                        let CommandData::CameraTrack(data) = &command.data else {
+                            panic!(
+                                "a camera track command type didn't produce CommandData::CameraTrack"
+                            );
+                        };
+                        let tracks = acc.entry(command.player_id as u32).or_default();
+                        tracks.push(CameraTrack::new(
+                            idx as u32 + 1,
+                            command.player_id,
+                            data.clone(),
                         ));
                     }
                 }
@@ -144,4 +181,11 @@ impl Replay {
                 acc
             })
     }
+}
+
+fn is_camera_track(action_type: CommandType) -> bool {
+    matches!(
+        action_type,
+        CommandType::DCMD_CameraTrack | CommandType::DCMD_COUNT
+    )
 }

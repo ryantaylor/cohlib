@@ -2,8 +2,8 @@
 
 use crate::{
     command_data::{
-        Ability, Construction, Empty, Orientation, Pbgid, Position, SourcePbgid, Sourced,
-        SourcedIndex, SourcedPbgid, Squads, Targeted, Unknown,
+        Ability, BroadcastMessage, Construction, Empty, Orientation, Pbgid, Position,
+        ResourceBonus, SourcePbgid, Sourced, SourcedIndex, SourcedPbgid, Squads, Targeted, Unknown,
     },
     command_type::CommandType,
     data::ticks::{self, value::TargetValues},
@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Command {
     AITakeover(Empty),
+    /// A player's AI issuing itself a resource bonus, `PCMD_AIPlayer_ResourceBonus`.
+    AIResourceBonus(ResourceBonus),
     /// A squad attacking a target, `SCMD_Attack`.
     Attack(Targeted),
     /// A squad moving to a position while engaging targets along the way,
@@ -26,6 +28,9 @@ pub enum Command {
     AttackMove(Targeted),
     /// An entity attacking from within a garrisoned building, `CMD_AttackFromHold`.
     AttackFromHold(Targeted),
+    /// A player broadcasting a UI/scripted action, `PCMD_BroadcastMessage` — see
+    /// [`BroadcastMessage`] on why this isn't chat (that's `crate::Message`).
+    Broadcast(BroadcastMessage),
     /// A squad constructing a structure, `SCMD_BuildStructure`.
     BuildStructure(Targeted),
     BuildGlobalUpgrade(SourcedPbgid),
@@ -322,6 +327,28 @@ impl Command {
                     ),
                 }
             }
+            ticks::CommandData::CameraTrack(_) => panic!(
+                "camera track commands are not player commands and should have been \
+                 filtered out before reaching Command conversion — see Replay::camera_tracks"
+            ),
+            ticks::CommandData::ResourceBonus(entries) => match command.action_type {
+                CommandType::PCMD_AIPlayer_ResourceBonus => Self::AIResourceBonus(
+                    ResourceBonus::new(tick, command.index, entries.into_iter().collect()),
+                ),
+                _ => panic!(
+                    "a resource bonus command isn't being handled here! command type {:?}",
+                    command.action_type
+                ),
+            },
+            ticks::CommandData::BroadcastMessage(json) => match command.action_type {
+                CommandType::PCMD_BroadcastMessage => {
+                    Self::Broadcast(BroadcastMessage::new(tick, command.index, json))
+                }
+                _ => panic!(
+                    "a broadcast message command isn't being handled here! command type {:?}",
+                    command.action_type
+                ),
+            },
             ticks::CommandData::Unknown => {
                 Self::Unknown(Unknown::new(tick, command.index, command.action_type))
             }

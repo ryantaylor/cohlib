@@ -6,12 +6,13 @@ use crate::{
     data::{ParserResult, Span},
 };
 use nom::{
-    bytes::complete::take,
+    bytes::complete::{tag, take},
     combinator::{flat_map, map, peek, rest},
-    multi::{length_count, length_value},
+    multi::{length_count, length_data, length_value},
     number::complete::{be_u32, le_f32, le_u16, le_u32, le_u8},
     sequence::{preceded, tuple},
 };
+use nom_tracable::tracable_parser;
 
 /// The three positions and spawned entity ids parsed by [`CommandData::parse_construction`].
 type ConstructionFields = (([f32; 3], [f32; 3], [f32; 3]), Vec<u32>);
@@ -46,6 +47,16 @@ pub enum CommandData {
     /// `PCMD_PlaceAndConstructEntities`'s payload: a pbgid, three raw (non-tag-prefixed)
     /// positions, and the spawned entity ids.
     Construction(u32, [f32; 3], [f32; 3], [f32; 3], Vec<u32>),
+    /// `DCMD_CameraTrack`/`DCMD_COUNT`'s payload: everything after the 5-byte `0xFF`
+    /// marker, captured verbatim. Unlike every other command type, these have no
+    /// header or source field at all — see [`CommandData::parse_camera_track`].
+    CameraTrack(Vec<u8>),
+    /// `PCMD_AIPlayer_ResourceBonus`'s payload: a count-prefixed map from
+    /// length-prefixed resource name to `f32` multiplier.
+    ResourceBonus(Vec<(String, f32)>),
+    /// `PCMD_BroadcastMessage`'s payload: 4 not-yet-understood bytes, then a
+    /// length-prefixed UTF-8 JSON message.
+    BroadcastMessage(String),
     Unknown,
 }
 
@@ -272,6 +283,61 @@ impl CommandData {
         )(input)
     }
 
+    /// `DCMD_CameraTrack`/`DCMD_COUNT` payload: a fixed 5-byte `0xFF` marker — unlike
+    /// every other command type, no header or source field precedes it — followed by
+    /// not-yet-decoded telemetry bytes captured verbatim. Panics if the marker isn't
+    /// present, since that would mean this payload isn't the validated DCMD shape at
+    /// all.
+    pub fn parse_camera_track(input: Span) -> ParserResult<CommandData> {
+        map(
+            preceded(tag([0xffu8, 0xff, 0xff, 0xff, 0xff].as_slice()), rest),
+            |data: Span| CommandData::CameraTrack(data.fragment().to_vec()),
+        )(input)
+    }
+
+    /// Header, source, then a parameter block whose data is a count-prefixed sequence
+    /// of `(length-prefixed UTF-8 key, f32 value)` pairs — a resource name to
+    /// multiplier map. Validated against every occurrence in the corpus examined during
+    /// development.
+    pub fn parse_resource_bonus(input: Span) -> ParserResult<CommandData> {
+        map(
+            tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
+            |(_, _source, block)| {
+                let entry = tuple((
+                    map(length_data(le_u32), |s: Span| {
+                        String::from_utf8_lossy(s.fragment()).into_owned()
+                    }),
+                    le_f32,
+                ));
+                let result: ParserResult<Vec<(String, f32)>> =
+                    length_count(le_u32, entry)(expect_block(block).data);
+                match result {
+                    Ok((_, entries)) => CommandData::ResourceBonus(entries),
+                    Err(e) => panic!("failed to parse resource bonus data: {e:?}"),
+                }
+            },
+        )(input)
+    }
+
+    /// Header, source, then a parameter block whose data is 4 not-yet-understood
+    /// bytes followed by a length-prefixed UTF-8 JSON message. Validated against every
+    /// occurrence in the corpus examined during development.
+    pub fn parse_broadcast_message(input: Span) -> ParserResult<CommandData> {
+        map(
+            tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
+            |(_, _source, block)| {
+                let result: ParserResult<Span> =
+                    preceded(take(4u32), length_data(le_u32))(expect_block(block).data);
+                match result {
+                    Ok((_, json)) => CommandData::BroadcastMessage(
+                        String::from_utf8_lossy(json.fragment()).into_owned(),
+                    ),
+                    Err(e) => panic!("failed to parse broadcast message: {e:?}"),
+                }
+            },
+        )(input)
+    }
+
     pub fn parse_unknown(input: Span) -> ParserResult<CommandData> {
         map(rest, |_| CommandData::Unknown)(input)
     }
@@ -318,6 +384,9 @@ impl CommandData {
             | CommandType::SCMD_BuildStructure
             | CommandType::SCMD_Recrew
             | CommandType::PCMD_DetonateCharges => Self::parse_targeted,
+            CommandType::DCMD_CameraTrack | CommandType::DCMD_COUNT => Self::parse_camera_track,
+            CommandType::PCMD_AIPlayer_ResourceBonus => Self::parse_resource_bonus,
+            CommandType::PCMD_BroadcastMessage => Self::parse_broadcast_message,
             _ => Self::parse_unknown,
         }
     }
@@ -381,6 +450,7 @@ pub struct Command {
 }
 
 impl Command {
+    #[tracable_parser]
     pub fn parse(input: Span) -> ParserResult<Command> {
         map(
             length_value(
