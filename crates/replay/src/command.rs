@@ -2,8 +2,8 @@
 
 use crate::{
     command_data::{
-        Ability, Empty, Orientation, Pbgid, Position, SourcePbgid, Sourced, SourcedIndex,
-        SourcedPbgid, Squads, Targeted, Unknown,
+        Ability, Construction, Empty, Orientation, Pbgid, Position, SourcePbgid, Sourced,
+        SourcedIndex, SourcedPbgid, Squads, Targeted, Unknown,
     },
     command_type::CommandType,
     data::ticks::{self, value::TargetValues},
@@ -36,7 +36,7 @@ pub enum Command {
     Capture(Targeted),
     /// A squad capturing an abandoned team weapon, `SCMD_CaptureTeamWeapon`.
     CaptureTeamWeapon(Targeted),
-    ConstructEntity(Pbgid),
+    ConstructEntity(Construction),
     /// A player clearing all pending (not-yet-purchased) battlegroup ability
     /// selections, e.g. `PCMD_TentativeUpgradeRemoveAll`.
     DeselectAllBattlegroupAbilities(Squads),
@@ -100,15 +100,6 @@ impl Command {
             },
             ticks::CommandData::Pbgid(pbgid) => match command.action_type {
                 CommandType::PCMD_InstantUpgrade => Self::SelectBattlegroup(Pbgid::new(
-                    tick,
-                    command.index,
-                    pbgid,
-                    None,
-                    None,
-                    None,
-                    None,
-                )),
-                CommandType::PCMD_PlaceAndConstructEntities => Self::ConstructEntity(Pbgid::new(
                     tick,
                     command.index,
                     pbgid,
@@ -312,6 +303,25 @@ impl Command {
                     command.action_type
                 ),
             },
+            ticks::CommandData::Construction(pbgid, position, snapped, actual, entities) => {
+                match command.action_type {
+                    CommandType::PCMD_PlaceAndConstructEntities => {
+                        Self::ConstructEntity(Construction::new(
+                            tick,
+                            command.index,
+                            pbgid,
+                            Position::new(position[0], position[1], position[2]),
+                            Position::new(snapped[0], snapped[1], snapped[2]),
+                            Position::new(actual[0], actual[1], actual[2]),
+                            entities,
+                        ))
+                    }
+                    _ => panic!(
+                        "a construction command isn't being handled here! command type {:?}",
+                        command.action_type
+                    ),
+                }
+            }
             ticks::CommandData::Unknown => {
                 Self::Unknown(Unknown::new(tick, command.index, command.action_type))
             }

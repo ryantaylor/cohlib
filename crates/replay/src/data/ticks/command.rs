@@ -8,10 +8,13 @@ use crate::{
 use nom::{
     bytes::complete::take,
     combinator::{flat_map, map, peek, rest},
-    multi::length_value,
-    number::complete::{le_u16, le_u32, le_u8},
-    sequence::tuple,
+    multi::{length_count, length_value},
+    number::complete::{be_u32, le_f32, le_u16, le_u32, le_u8},
+    sequence::{preceded, tuple},
 };
+
+/// The three positions and spawned entity ids parsed by [`CommandData::parse_construction`].
+type ConstructionFields = (([f32; 3], [f32; 3], [f32; 3]), Vec<u32>);
 
 #[derive(Debug, Clone)]
 pub enum CommandData {
@@ -40,6 +43,9 @@ pub enum CommandData {
     /// continues/updates an already-active ability's target rather than starting a new
     /// one), and zero or more targeting values.
     Ability(Source, Option<u32>, TargetValues),
+    /// `PCMD_PlaceAndConstructEntities`'s payload: a pbgid, three raw (non-tag-prefixed)
+    /// positions, and the spawned entity ids.
+    Construction(u32, [f32; 3], [f32; 3], [f32; 3], Vec<u32>),
     Unknown,
 }
 
@@ -228,6 +234,44 @@ impl CommandData {
         )(input)
     }
 
+    /// Header, source, then a construction parameter block (kind `0x1A`): a pbgid,
+    /// three raw (non-tag-prefixed) positions, 4 not-yet-understood bytes, then a
+    /// count-prefixed list of spawned entity ids — the count is stored as a big-endian
+    /// `u32` whose high three bytes are always zero, i.e. effectively a one-byte count.
+    /// Validated against every occurrence in the corpus examined during development.
+    /// Panics if the block isn't kind `0x1A` or doesn't fit this shape; gracefully
+    /// decodes as `Unknown` (not a panic) if the leading value isn't a pbgid — the same
+    /// known AI/CPU-issued anomaly documented on [`Self::parse_sourced_pbgid`] shows up
+    /// here too.
+    pub fn parse_construction(input: Span) -> ParserResult<CommandData> {
+        map(
+            tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
+            |(_, _source, block)| {
+                let block = expect_block(block);
+                if block.kind != 0x1A {
+                    panic!(
+                        "expected a construction parameter block (kind 0x1A), found kind 0x{:02x}",
+                        block.kind
+                    );
+                }
+                let Some((after_pbgid, pbgid)) = Value::try_pbgid_with_rest(block.data) else {
+                    return CommandData::Unknown;
+                };
+                let positions = tuple((parse_raw_position, parse_raw_position, parse_raw_position));
+                // 4 not-yet-understood bytes precede the count.
+                let entities = preceded(take(4u32), length_count(be_u32, le_u32));
+                let result: ParserResult<ConstructionFields> =
+                    tuple((positions, entities))(after_pbgid);
+                match result {
+                    Ok((_, ((position, snapped, actual), entities))) => {
+                        CommandData::Construction(pbgid, position, snapped, actual, entities)
+                    }
+                    Err(e) => panic!("failed to parse construction data: {e:?}"),
+                }
+            },
+        )(input)
+    }
+
     pub fn parse_unknown(input: Span) -> ParserResult<CommandData> {
         map(rest, |_| CommandData::Unknown)(input)
     }
@@ -237,9 +281,10 @@ impl CommandData {
     ) -> impl FnMut(Span) -> ParserResult<CommandData> {
         match command_type {
             CommandType::PCMD_AIPlayer => Self::parse_empty,
-            CommandType::PCMD_InstantUpgrade
-            | CommandType::PCMD_TentativeUpgrade
-            | CommandType::PCMD_PlaceAndConstructEntities => Self::parse_pbgid,
+            CommandType::PCMD_InstantUpgrade | CommandType::PCMD_TentativeUpgrade => {
+                Self::parse_pbgid
+            }
+            CommandType::PCMD_PlaceAndConstructEntities => Self::parse_construction,
             CommandType::CMD_BuildSquad | CommandType::CMD_Upgrade => Self::parse_sourced_pbgid,
             CommandType::PCMD_Ability => Self::parse_pbgid_targeted,
             CommandType::CMD_Ability => Self::parse_sourced_pbgid_targeted,
@@ -302,6 +347,12 @@ fn parse_targets(data: Span) -> TargetValues {
         Ok((_, targets)) => targets,
         Err(e) => panic!("failed to parse targeting values: {e:?}"),
     }
+}
+
+/// Parses a raw `[f32; 3]` position with no leading `Value` tag — used by construction
+/// commands, whose positions aren't tagged the way `Value::Position` normally is.
+fn parse_raw_position(input: Span) -> ParserResult<[f32; 3]> {
+    map(tuple((le_f32, le_f32, le_f32)), |(x, y, z)| [x, y, z])(input)
 }
 
 /// Parses `[pbgid value][kind-specific skip][target value chain]`, the shape shared by

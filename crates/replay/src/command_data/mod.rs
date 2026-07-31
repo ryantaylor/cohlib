@@ -1,6 +1,7 @@
 //! Representations of replay command data formats.
 
 mod ability;
+mod construction;
 mod empty;
 mod orientation;
 mod pbgid;
@@ -15,6 +16,7 @@ mod targeted;
 mod unknown;
 
 pub use crate::command_data::ability::Ability;
+pub use crate::command_data::construction::Construction;
 pub use crate::command_data::empty::Empty;
 pub use crate::command_data::orientation::Orientation;
 pub use crate::command_data::pbgid::Pbgid;
