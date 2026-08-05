@@ -1,20 +1,24 @@
+use crate::command_data::Source;
 use serde::{Deserialize, Serialize};
 
-/// A simple command format that contains just a source identifier.
+/// A command format that contains just a source. `CMD_CancelConstruction`'s source can
+/// legitimately be a multi-squad selection (cancelling construction on several selected
+/// buildings at once), so — like [`super::SourcePbgid`] — this preserves the full
+/// [`Source`] rather than truncating it to a legacy `u16`.
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Sourced {
     tick: u32,
     index: u32,
-    source_identifier: u16,
+    source: Source,
 }
 
 impl Sourced {
-    pub(crate) fn new(tick: u32, index: u32, source_identifier: u16) -> Self {
+    pub(crate) fn new(tick: u32, index: u32, source: Source) -> Self {
         Self {
             tick,
             index,
-            source_identifier,
+            source,
         }
     }
 
@@ -32,10 +36,8 @@ impl Sourced {
     pub fn index(&self) -> u32 {
         self.index
     }
-    /// This value corresponds to the internal identifier given by the game engine to the entity
-    /// that is the source of the command. If you know the identifier for a given entity, you can
-    /// use this value to link this command to that entity.
-    pub fn source_identifier(&self) -> u16 {
-        self.source_identifier
+    /// Who or what issued this command.
+    pub fn source(&self) -> &Source {
+        &self.source
     }
 }

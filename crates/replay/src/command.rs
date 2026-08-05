@@ -156,9 +156,9 @@ impl Command {
                     command.action_type
                 ),
             },
-            ticks::CommandData::Sourced(source_identifier) => match command.action_type {
+            ticks::CommandData::Sourced(source) => match command.action_type {
                 CommandType::CMD_CancelConstruction => {
-                    Self::CancelConstruction(Sourced::new(tick, command.index, source_identifier))
+                    Self::CancelConstruction(Sourced::new(tick, command.index, source))
                 }
                 _ => panic!(
                     "a sourced command isn't being handled here! command type {:?}",

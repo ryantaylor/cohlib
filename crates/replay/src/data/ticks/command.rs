@@ -22,7 +22,10 @@ pub enum CommandData {
     Empty,
     Pbgid(Blueprint),
     SourcedPbgid(Blueprint, u16),
-    Sourced(u16),
+    /// Header and source only, with the full `Source` preserved (unlike `SourcedPbgid`)
+    /// since `CMD_CancelConstruction`'s source can legitimately be a multi-squad
+    /// selection.
+    Sourced(Source),
     SourcedIndex(u16, u32),
     /// Header, source and a blueprint, with the full `Source` preserved (unlike
     /// `SourcedPbgid`, which keeps only the legacy truncated identifier).
@@ -93,7 +96,7 @@ impl CommandData {
                         block.kind
                     );
                 }
-                CommandData::Sourced(source.legacy_identifier())
+                CommandData::Sourced(source)
             },
         )(input)
     }

@@ -6,7 +6,7 @@
 //! that model. It also checks that command types this crate claims to semantically
 //! decode always do so, rather than silently falling back to `Command::Unknown`.
 
-use cohlib::{Command, CommandType};
+use cohlib::{Command, CommandType, Source};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -195,6 +195,32 @@ fn retreats_carrying_a_facing_decode_as_retreats() {
             .count(),
         16,
         "expected every retreat carrying a facing to decode it"
+    );
+}
+
+/// `CMD_CancelConstruction`'s source was assumed scalar until a build 48837 replay
+/// showed it can be a multi-squad selection (cancelling construction on several
+/// selected buildings in one command), so `Sourced` preserves the full `Source`
+/// rather than truncating it to a legacy `u16`.
+#[test]
+fn cancel_construction_decodes_a_multi_squad_source() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("replays")
+        .join("v48837_multi_select_cancel_construction.rec");
+    let replay = parse_fixture(&path);
+
+    let has_multi_squad_cancel = replay
+        .players()
+        .iter()
+        .flat_map(|player| player.commands())
+        .any(|command| match command {
+            Command::CancelConstruction(data) => matches!(data.source(), Source::Squads(_)),
+            _ => false,
+        });
+
+    assert!(
+        has_multi_squad_cancel,
+        "expected at least one CancelConstruction with a multi-squad source"
     );
 }
 
