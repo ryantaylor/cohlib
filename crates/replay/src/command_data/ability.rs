@@ -1,5 +1,7 @@
 use crate::command_data::{Orientation, Position, Source};
+use crate::data::ticks::value::Blueprint;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// A command format used only by `SCMD_Ability`, which — uniquely among decoded command
 /// types — sometimes carries an ability pbgid (with optional targeting fields) and
@@ -12,6 +14,7 @@ pub struct Ability {
     index: u32,
     source: Source,
     pbgid: Option<u32>,
+    mod_uuid: Option<Uuid>,
     position: Option<Position>,
     facing: Option<f32>,
     orientation: Option<Orientation>,
@@ -24,7 +27,7 @@ impl Ability {
         tick: u32,
         index: u32,
         source: Source,
-        pbgid: Option<u32>,
+        blueprint: Option<Blueprint>,
         position: Option<Position>,
         facing: Option<f32>,
         orientation: Option<Orientation>,
@@ -34,7 +37,8 @@ impl Ability {
             tick,
             index,
             source,
-            pbgid,
+            pbgid: blueprint.map(|b| b.pbgid),
+            mod_uuid: blueprint.and_then(|b| b.mod_uuid),
             position,
             facing,
             orientation,
@@ -62,8 +66,18 @@ impl Ability {
     }
     /// Internal ID identifying the ability, if this command carried one — absent when
     /// this command is continuing or updating the target of an already-active ability.
+    ///
+    /// This is only globally unique when `Self::mod_uuid` is `None`. Otherwise the ID is
+    /// scoped to that mod's content and will not match base game attribute data.
     pub fn pbgid(&self) -> Option<u32> {
         self.pbgid
+    }
+    /// The UUID of the mod content pack defining the blueprint `Self::pbgid` refers to,
+    /// or `None` when it is base game content or this command carried no blueprint at
+    /// all. Note that this is not the same value as `Replay::mod_uuid`, which identifies
+    /// the mod the match itself was played under.
+    pub fn mod_uuid(&self) -> Option<Uuid> {
+        self.mod_uuid
     }
     /// The target world-space position, if this command carried one.
     pub fn position(&self) -> Option<Position> {

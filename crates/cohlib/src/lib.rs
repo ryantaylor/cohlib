@@ -5,7 +5,7 @@ pub use data::{GameData, LocaleStore, ScreenNameFormatter, Semver, Version, Vers
 pub use error::Error;
 pub use replay::command_data::{
     Ability, BroadcastMessage, CameraTrack, Construction, Orientation, Position, ResourceBonus,
-    Source, SourcePbgid, Squads, Targeted,
+    Source, SourcePbgid, Targeted,
 };
 pub use replay::{
     parse_replay, Command, CommandType, Faction, GameType, Map, MapPoint, Message, Player, Replay,

@@ -10,10 +10,15 @@
 //! ```
 //!
 //! This structure was reverse-engineered from and validated against every command in
-//! every CoH3 release replay available during development (21 game builds, 8713
-//! through 48652, ~370k commands, zero mismatches). It is not derived from any
-//! official source. Pre-release CoH3 builds are known to use a different, incompatible
-//! layout and are out of scope — see the crate-level docs.
+//! every CoH3 release replay available during development (8.8k replays spanning 8713
+//! through 48652, ~62M commands, zero mismatches). It is not derived from any official
+//! source. Pre-release CoH3 builds are known to use a different, incompatible layout
+//! and are out of scope — see the crate-level docs.
+//!
+//! Because the format holds across every release build, input that doesn't match it is
+//! treated as a bug to surface rather than data to skip: these parsers panic instead of
+//! degrading to `Command::Unknown`, which is reserved for command types this crate has
+//! not decoded at all.
 
 use crate::command_data::Source;
 use crate::data::{ParserResult, Span};

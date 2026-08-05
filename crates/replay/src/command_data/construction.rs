@@ -1,5 +1,7 @@
 use crate::command_data::Position;
+use crate::data::ticks::value::Blueprint;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// A command format used by `PCMD_PlaceAndConstructEntities`: an entity pbgid, three
 /// positions, and the internal engine IDs of the entities the game spawned as a result.
@@ -15,6 +17,7 @@ pub struct Construction {
     tick: u32,
     index: u32,
     pbgid: u32,
+    mod_uuid: Option<Uuid>,
     position: Position,
     snapped_position: Position,
     final_position: Position,
@@ -26,7 +29,7 @@ impl Construction {
     pub(crate) fn new(
         tick: u32,
         index: u32,
-        pbgid: u32,
+        blueprint: Blueprint,
         position: Position,
         snapped_position: Position,
         final_position: Position,
@@ -35,7 +38,8 @@ impl Construction {
         Self {
             tick,
             index,
-            pbgid,
+            pbgid: blueprint.pbgid,
+            mod_uuid: blueprint.mod_uuid,
             position,
             snapped_position,
             final_position,
@@ -60,8 +64,17 @@ impl Construction {
     /// Internal ID that uniquely identifies entity associated with the command. This value can be
     /// matched to CoH3 attribute files in order to determine the entity in question. Note that,
     /// while rare, it is possible that this value may change between patches for the same entity.
+    ///
+    /// This is only globally unique when `Self::mod_uuid` is `None`. Otherwise the ID is
+    /// scoped to that mod's content and will not match base game attribute data.
     pub fn pbgid(&self) -> u32 {
         self.pbgid
+    }
+    /// The UUID of the mod content pack defining the blueprint `Self::pbgid` refers to,
+    /// or `None` when it is base game content. Note that this is not the same value as
+    /// `Replay::mod_uuid`, which identifies the mod the match itself was played under.
+    pub fn mod_uuid(&self) -> Option<Uuid> {
+        self.mod_uuid
     }
     /// The raw cursor position where placement was requested. See the type-level docs
     /// on the uncertainty around the exact distinction between the three positions.

@@ -2,7 +2,7 @@ use crate::{
     command_data::Source,
     command_type::CommandType,
     data::ticks::payload::{self, ParamBlock},
-    data::ticks::value::{TargetValues, Value},
+    data::ticks::value::{Blueprint, TargetValues, Value},
     data::{ParserResult, Span},
 };
 use nom::{
@@ -20,33 +20,29 @@ type ConstructionFields = (([f32; 3], [f32; 3], [f32; 3]), Vec<u32>);
 #[derive(Debug, Clone)]
 pub enum CommandData {
     Empty,
-    Pbgid(u32),
-    SourcedPbgid(u32, u16),
+    Pbgid(Blueprint),
+    SourcedPbgid(Blueprint, u16),
     Sourced(u16),
     SourcedIndex(u16, u32),
-    /// Header and source only, with the full `Source` preserved (unlike `Sourced`,
-    /// which keeps only the legacy truncated identifier). Used for commands whose
-    /// source can legitimately be a multi-squad selection.
-    SourceOnly(Source),
-    /// Header, source and a pbgid, with the full `Source` preserved (unlike
+    /// Header, source and a blueprint, with the full `Source` preserved (unlike
     /// `SourcedPbgid`, which keeps only the legacy truncated identifier).
-    SourcePbgid(Source, u32),
+    SourcePbgid(Source, Blueprint),
     /// Header, source, and zero or more targeting values (position, facing,
     /// orientation, target entity).
     Targeted(Source, TargetValues),
-    /// A pbgid and zero or more targeting values, with no source (used by
+    /// A blueprint and zero or more targeting values, with no source (used by
     /// `PCMD_Ability`, whose source is always the issuing player).
-    PbgidTargeted(u32, TargetValues),
-    /// A pbgid, legacy source identifier, and zero or more targeting values (used by
+    PbgidTargeted(Blueprint, TargetValues),
+    /// A blueprint, legacy source identifier, and zero or more targeting values (used by
     /// `CMD_Ability`).
-    SourcedPbgidTargeted(u32, u16, TargetValues),
-    /// `SCMD_Ability`'s payload: a source, an optional pbgid (absent when this command
-    /// continues/updates an already-active ability's target rather than starting a new
-    /// one), and zero or more targeting values.
-    Ability(Source, Option<u32>, TargetValues),
-    /// `PCMD_PlaceAndConstructEntities`'s payload: a pbgid, three raw (non-tag-prefixed)
-    /// positions, and the spawned entity ids.
-    Construction(u32, [f32; 3], [f32; 3], [f32; 3], Vec<u32>),
+    SourcedPbgidTargeted(Blueprint, u16, TargetValues),
+    /// `SCMD_Ability`'s payload: a source, an optional blueprint (absent when this
+    /// command continues/updates an already-active ability's target rather than starting
+    /// a new one), and zero or more targeting values.
+    Ability(Source, Option<Blueprint>, TargetValues),
+    /// `PCMD_PlaceAndConstructEntities`'s payload: a blueprint, three raw
+    /// (non-tag-prefixed) positions, and the spawned entity ids.
+    Construction(Blueprint, [f32; 3], [f32; 3], [f32; 3], Vec<u32>),
     /// `DCMD_CameraTrack`/`DCMD_COUNT`'s payload: everything after the 5-byte `0xFF`
     /// marker, captured verbatim. Unlike every other command type, these have no
     /// header or source field at all — see [`CommandData::parse_camera_track`].
@@ -65,34 +61,23 @@ impl CommandData {
         map(rest, |_| CommandData::Empty)(input)
     }
 
-    /// Header, source, then a parameter block whose data is usually a single pbgid
-    /// value — anything else the block might carry (target position, orientation, ...)
-    /// is intentionally left unread for now. If the block's first value isn't a pbgid,
-    /// this decodes as `Unknown` rather than a guessed-at pbgid — see
-    /// [`Self::parse_sourced_pbgid`] on why (no occurrence of this has been observed
-    /// for the specific types routed here, but the same graceful handling applies).
+    /// Header, source, then a parameter block whose data begins with a blueprint
+    /// reference — anything else the block might carry (target position, orientation,
+    /// ...) is intentionally left unread for now.
     pub fn parse_pbgid(input: Span) -> ParserResult<CommandData> {
         map(
             tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
-            |(_, _source, block)| match Value::try_pbgid(expect_block(block).data) {
-                Some(pbgid) => CommandData::Pbgid(pbgid),
-                None => CommandData::Unknown,
-            },
+            |(_, _source, block)| CommandData::Pbgid(expect_blueprint(block)),
         )(input)
     }
 
-    /// Header, source, then a parameter block whose data is usually a single pbgid
-    /// value. A small number of commands routed here carry a different, non-pbgid
-    /// first value instead (observed for `CMD_BuildSquad` and `CMD_Upgrade`, always the
-    /// same 17-byte blob, always in the same replay — see
-    /// `crates/cohlib/tests/command_payload.rs`); those decode as `Unknown` rather than
-    /// a guessed-at pbgid.
+    /// Header, source, then a parameter block whose data begins with a blueprint
+    /// reference, keeping the legacy truncated source identifier.
     pub fn parse_sourced_pbgid(input: Span) -> ParserResult<CommandData> {
         map(
             tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
-            |(_, source, block)| match Value::try_pbgid(expect_block(block).data) {
-                Some(pbgid) => CommandData::SourcedPbgid(pbgid, source.legacy_identifier()),
-                None => CommandData::Unknown,
+            |(_, source, block)| {
+                CommandData::SourcedPbgid(expect_blueprint(block), source.legacy_identifier())
             },
         )(input)
     }
@@ -132,48 +117,25 @@ impl CommandData {
         )(input)
     }
 
-    /// Header and source only, preserving the full `Source` (see
-    /// [`CommandData::SourceOnly`]) rather than truncating it to the legacy `u16` the
-    /// way [`Self::parse_sourced`] does. These commands are usually parameter-less, but
-    /// a small fraction of `SCMD_Retreat` occurrences carry an unexpected parameter
-    /// block instead — a real, recognized-but-not-yet-decoded variant rather than
-    /// malformed data, so it decodes as `Unknown` rather than panicking. See
-    /// `crates/cohlib/tests/command_payload.rs`.
-    pub fn parse_squads(input: Span) -> ParserResult<CommandData> {
-        map(
-            tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
-            |(_, source, block)| match block {
-                None => CommandData::SourceOnly(source),
-                Some(_) => CommandData::Unknown,
-            },
-        )(input)
-    }
-
-    /// Header, source, then a parameter block whose data is usually a single pbgid
-    /// value — like [`Self::parse_sourced_pbgid`], but preserving the full `Source`
+    /// Header, source, then a parameter block whose data begins with a blueprint
+    /// reference — like [`Self::parse_sourced_pbgid`], but preserving the full `Source`
     /// (see [`CommandData::SourcePbgid`]) since these commands' source can legitimately
-    /// be a multi-squad selection. See [`Self::parse_pbgid`] on the `Unknown` fallback
-    /// for a non-pbgid first value (observed here for `SCMD_ReinforceUnit`, same known
-    /// exception as elsewhere).
+    /// be a multi-squad selection.
     pub fn parse_source_pbgid(input: Span) -> ParserResult<CommandData> {
         map(
             tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
-            |(_, source, block)| match Value::try_pbgid(expect_block(block).data) {
-                Some(pbgid) => CommandData::SourcePbgid(source, pbgid),
-                None => CommandData::Unknown,
-            },
+            |(_, source, block)| CommandData::SourcePbgid(source, expect_blueprint(block)),
         )(input)
     }
 
     /// Header, source, then an optional parameter block containing zero or more
     /// targeting values (position, facing, orientation, entity reference). Block kinds
     /// `0x06` and `0x0F` have a fixed-size, not-yet-understood prefix (4 and 8 bytes
-    /// respectively) before the value chain; every other kind these commands use
-    /// (`0x01`, `0x03`, `0x1D`) has none. Validated against every occurrence of these
-    /// block kinds in the corpus examined during development — see
-    /// `Value::parse_targets` on why any further trailing bytes are intentionally left
-    /// unread. No block at all (kind `0xFF`, or absent entirely — the latter seen only
-    /// for `SCMD_Unload`) yields all-`None` targeting fields.
+    /// respectively) before the value chain; the other kinds these commands use
+    /// (`0x01`, `0x03`, `0x1D`) have none. See `Value::parse_targets` on why any
+    /// further trailing bytes are intentionally left unread. No block at all (kind
+    /// `0xFF`, or absent entirely — the latter seen only for `SCMD_Unload`) yields
+    /// all-`None` targeting fields.
     pub fn parse_targeted(input: Span) -> ParserResult<CommandData> {
         map(
             tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
@@ -182,9 +144,12 @@ impl CommandData {
                     None => TargetValues::default(),
                     Some(block) => {
                         let skip: u32 = match block.kind {
+                            0x01 | 0x03 | 0x1D => 0,
                             0x06 => 4,
                             0x0F => 8,
-                            _ => 0,
+                            other => {
+                                panic!("unrecognized targeting parameter block kind 0x{other:02x}")
+                            }
                         };
                         parse_targets(skip_bytes(block.data, skip))
                     }
@@ -194,66 +159,59 @@ impl CommandData {
         )(input)
     }
 
-    /// Header, source, then a pbgid-and-targets block (see `parse_pbgid_and_targets`).
-    /// `PCMD_Ability`'s source is discarded (always the issuing player, already
-    /// available elsewhere) to match [`Self::parse_pbgid`].
+    /// Header, source, then a blueprint-and-targets block (see
+    /// `parse_blueprint_and_targets`). `PCMD_Ability`'s source is discarded (always the
+    /// issuing player, already available elsewhere) to match [`Self::parse_pbgid`].
     pub fn parse_pbgid_targeted(input: Span) -> ParserResult<CommandData> {
         map(
             tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
-            |(_, _source, block)| match parse_pbgid_and_targets(&expect_block(block)) {
-                Some((pbgid, targets)) => CommandData::PbgidTargeted(pbgid, targets),
-                None => CommandData::Unknown,
+            |(_, _source, block)| {
+                let (blueprint, targets) = parse_blueprint_and_targets(&expect_block(block));
+                CommandData::PbgidTargeted(blueprint, targets)
             },
         )(input)
     }
 
-    /// Header, source, then a pbgid-and-targets block (see `parse_pbgid_and_targets`),
-    /// preserving the legacy source identifier like [`Self::parse_sourced_pbgid`] does.
+    /// Header, source, then a blueprint-and-targets block (see
+    /// `parse_blueprint_and_targets`), preserving the legacy source identifier like
+    /// [`Self::parse_sourced_pbgid`] does.
     pub fn parse_sourced_pbgid_targeted(input: Span) -> ParserResult<CommandData> {
         map(
             tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
-            |(_, source, block)| match parse_pbgid_and_targets(&expect_block(block)) {
-                Some((pbgid, targets)) => {
-                    CommandData::SourcedPbgidTargeted(pbgid, source.legacy_identifier(), targets)
-                }
-                None => CommandData::Unknown,
+            |(_, source, block)| {
+                let (blueprint, targets) = parse_blueprint_and_targets(&expect_block(block));
+                CommandData::SourcedPbgidTargeted(blueprint, source.legacy_identifier(), targets)
             },
         )(input)
     }
 
     /// `SCMD_Ability`'s payload is one of two shapes: block kind `0x01` carries only
-    /// targeting values with no pbgid at all (continuing/updating an already-active
-    /// ability's target, as best understood); kinds `0x23`/`0x24`/`0x29` carry a pbgid
-    /// (see `parse_pbgid_and_targets`). This is the only command type observed using
-    /// both.
+    /// targeting values with no blueprint at all (continuing/updating an already-active
+    /// ability's target, as best understood); kinds `0x23`/`0x24`/`0x29` carry a
+    /// blueprint (see `parse_blueprint_and_targets`). This is the only command type
+    /// observed using both.
     pub fn parse_ability(input: Span) -> ParserResult<CommandData> {
         map(
             tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
             |(_, source, block)| {
-                let result = match block {
-                    None => Some((None, TargetValues::default())),
-                    Some(block) if block.kind == 0x01 => Some((None, parse_targets(block.data))),
+                let (blueprint, targets) = match block {
+                    None => (None, TargetValues::default()),
+                    Some(block) if block.kind == 0x01 => (None, parse_targets(block.data)),
                     Some(block) => {
-                        parse_pbgid_and_targets(&block).map(|(pbgid, t)| (Some(pbgid), t))
+                        let (blueprint, targets) = parse_blueprint_and_targets(&block);
+                        (Some(blueprint), targets)
                     }
                 };
-                match result {
-                    Some((pbgid, targets)) => CommandData::Ability(source, pbgid, targets),
-                    None => CommandData::Unknown,
-                }
+                CommandData::Ability(source, blueprint, targets)
             },
         )(input)
     }
 
-    /// Header, source, then a construction parameter block (kind `0x1A`): a pbgid,
-    /// three raw (non-tag-prefixed) positions, 4 not-yet-understood bytes, then a
-    /// count-prefixed list of spawned entity ids — the count is stored as a big-endian
-    /// `u32` whose high three bytes are always zero, i.e. effectively a one-byte count.
-    /// Validated against every occurrence in the corpus examined during development.
-    /// Panics if the block isn't kind `0x1A` or doesn't fit this shape; gracefully
-    /// decodes as `Unknown` (not a panic) if the leading value isn't a pbgid — the same
-    /// known AI/CPU-issued anomaly documented on [`Self::parse_sourced_pbgid`] shows up
-    /// here too.
+    /// Header, source, then a construction parameter block (kind `0x1A`): a blueprint
+    /// reference, three raw (non-tag-prefixed) positions, 4 not-yet-understood bytes,
+    /// then a count-prefixed list of spawned entity ids — the count is stored as a
+    /// big-endian `u32` whose high three bytes are always zero, i.e. effectively a
+    /// one-byte count. Panics if the block isn't kind `0x1A` or doesn't fit this shape.
     pub fn parse_construction(input: Span) -> ParserResult<CommandData> {
         map(
             tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
@@ -265,17 +223,15 @@ impl CommandData {
                         block.kind
                     );
                 }
-                let Some((after_pbgid, pbgid)) = Value::try_pbgid_with_rest(block.data) else {
-                    return CommandData::Unknown;
-                };
+                let (after_blueprint, blueprint) = expect_parsed(Blueprint::parse(block.data));
                 let positions = tuple((parse_raw_position, parse_raw_position, parse_raw_position));
                 // 4 not-yet-understood bytes precede the count.
                 let entities = preceded(take(4u32), length_count(be_u32, le_u32));
                 let result: ParserResult<ConstructionFields> =
-                    tuple((positions, entities))(after_pbgid);
+                    tuple((positions, entities))(after_blueprint);
                 match result {
                     Ok((_, ((position, snapped, actual), entities))) => {
-                        CommandData::Construction(pbgid, position, snapped, actual, entities)
+                        CommandData::Construction(blueprint, position, snapped, actual, entities)
                     }
                     Err(e) => panic!("failed to parse construction data: {e:?}"),
                 }
@@ -362,14 +318,14 @@ impl CommandData {
             CommandType::CMD_CancelProduction
             | CommandType::SCMD_CancelProduction
             | CommandType::PCMD_CancelProduction => Self::parse_sourced_index,
+            CommandType::SCMD_Upgrade | CommandType::SCMD_ReinforceUnit => Self::parse_source_pbgid,
             CommandType::SCMD_Retreat
             | CommandType::SCMD_Stop
             | CommandType::PCMD_TentativeUpgradeRemoveAll
             | CommandType::SCMD_UnloadSquads
             | CommandType::CMD_UnloadSquads
-            | CommandType::PCMD_Surrender => Self::parse_squads,
-            CommandType::SCMD_Upgrade | CommandType::SCMD_ReinforceUnit => Self::parse_source_pbgid,
-            CommandType::CMD_RallyPoint
+            | CommandType::PCMD_Surrender
+            | CommandType::CMD_RallyPoint
             | CommandType::CMD_Move
             | CommandType::CMD_AttackFromHold
             | CommandType::SCMD_Move
@@ -398,6 +354,22 @@ fn expect_block(block: Option<ParamBlock>) -> ParamBlock {
     block.unwrap_or_else(|| panic!("expected a parameter block, found none"))
 }
 
+/// Reads the blueprint reference at the front of a command's parameter block, which
+/// every decoder routed here requires.
+fn expect_blueprint(block: Option<ParamBlock>) -> Blueprint {
+    expect_parsed(Blueprint::parse(expect_block(block).data)).1
+}
+
+/// Unwraps a parser result, panicking on failure — for reads whose input has already
+/// been bounded by the enclosing block, so a short read means the block doesn't match
+/// the wire format this crate models.
+fn expect_parsed<T>(result: ParserResult<T>) -> (Span, T) {
+    match result {
+        Ok(parsed) => parsed,
+        Err(e) => panic!("failed to read expected command payload value: {e:?}"),
+    }
+}
+
 /// Skips `n` bytes, panicking if the block doesn't have that many left — used for the
 /// fixed-size, not-yet-understood prefixes some block kinds have before their value
 /// chain.
@@ -424,21 +396,18 @@ fn parse_raw_position(input: Span) -> ParserResult<[f32; 3]> {
     map(tuple((le_f32, le_f32, le_f32)), |(x, y, z)| [x, y, z])(input)
 }
 
-/// Parses `[pbgid value][kind-specific skip][target value chain]`, the shape shared by
-/// every "ability" style block kind (`0x23`, `0x24`, `0x29`): `0x23` has no prefix
-/// after the pbgid, `0x24` has 6 not-yet-understood bytes, `0x29` has 1. Validated
-/// against every occurrence of these block kinds in the corpus examined during
-/// development. Returns `None` (rather than panicking) if the first value isn't a
-/// pbgid — the same known AI/CPU-issued anomaly documented on
-/// [`CommandData::parse_pbgid`] shows up here too.
-fn parse_pbgid_and_targets(block: &ParamBlock) -> Option<(u32, TargetValues)> {
-    let (after_pbgid, pbgid) = Value::try_pbgid_with_rest(block.data)?;
+/// Parses `[blueprint reference][kind-specific skip][target value chain]`, the shape
+/// shared by every "ability" style block kind (`0x23`, `0x24`, `0x29`): `0x23` has no
+/// prefix after the blueprint, `0x24` has 6 not-yet-understood bytes, `0x29` has 1.
+fn parse_blueprint_and_targets(block: &ParamBlock) -> (Blueprint, TargetValues) {
+    let (after_blueprint, blueprint) = expect_parsed(Blueprint::parse(block.data));
     let skip: u32 = match block.kind {
+        0x23 => 0,
         0x24 => 6,
         0x29 => 1,
-        _ => 0,
+        other => panic!("unrecognized ability parameter block kind 0x{other:02x}"),
     };
-    Some((pbgid, parse_targets(skip_bytes(after_pbgid, skip))))
+    (blueprint, parse_targets(skip_bytes(after_blueprint, skip)))
 }
 
 #[derive(Debug, Clone)]

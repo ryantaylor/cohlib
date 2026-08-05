@@ -3,7 +3,7 @@
 use crate::{
     command_data::{
         Ability, BroadcastMessage, Construction, Empty, Orientation, Pbgid, Position,
-        ResourceBonus, SourcePbgid, Sourced, SourcedIndex, SourcedPbgid, Squads, Targeted, Unknown,
+        ResourceBonus, SourcePbgid, Sourced, SourcedIndex, SourcedPbgid, Targeted, Unknown,
     },
     command_type::CommandType,
     data::ticks::{self, value::TargetValues},
@@ -44,7 +44,7 @@ pub enum Command {
     ConstructEntity(Construction),
     /// A player clearing all pending (not-yet-purchased) battlegroup ability
     /// selections, e.g. `PCMD_TentativeUpgradeRemoveAll`.
-    DeselectAllBattlegroupAbilities(Squads),
+    DeselectAllBattlegroupAbilities(Targeted),
     /// A player detonating previously-placed demolition charges,
     /// `PCMD_DetonateCharges`.
     DetonateCharges(Targeted),
@@ -63,25 +63,26 @@ pub enum Command {
     /// A squad reinforcing (adding models back to a depleted squad),
     /// `SCMD_ReinforceUnit`.
     Reinforce(SourcePbgid),
-    /// One or more squads retreating to base.
-    Retreat(Squads),
+    /// One or more squads retreating to base. Newer game builds let a retreat carry a
+    /// facing, so the targeting fields are not always empty.
+    Retreat(Targeted),
     /// An entity or squad setting a rally point, `CMD_RallyPoint`.
     RallyPoint(Targeted),
     SelectBattlegroup(Pbgid),
     SelectBattlegroupAbility(Pbgid),
     /// One or more squads halting their current action.
-    Stop(Squads),
+    Stop(Targeted),
     /// A squad or entity stopping its currently active ability, `SCMD_StopAbility` or
     /// `CMD_StopAbility` — both produce this variant since the effect is the same.
     StopAbility(SourcePbgid),
     /// A player surrendering the match.
-    Surrender(Squads),
+    Surrender(Targeted),
     /// A squad disembarking from a transport, `SCMD_Unload`.
     Unload(Targeted),
     /// A transport unloading all of its passengers, whether issued by the transport
     /// entity (`CMD_UnloadSquads`) or by the passenger squads themselves
     /// (`SCMD_UnloadSquads`) — both produce this variant since the effect is the same.
-    UnloadSquads(Squads),
+    UnloadSquads(Targeted),
     /// A squad researching an upgrade, `SCMD_Upgrade` — the squad-level equivalent of
     /// `BuildGlobalUpgrade`.
     UpgradeSquad(SourcePbgid),
@@ -103,11 +104,11 @@ impl Command {
                     command.action_type
                 ),
             },
-            ticks::CommandData::Pbgid(pbgid) => match command.action_type {
+            ticks::CommandData::Pbgid(blueprint) => match command.action_type {
                 CommandType::PCMD_InstantUpgrade => Self::SelectBattlegroup(Pbgid::new(
                     tick,
                     command.index,
-                    pbgid,
+                    blueprint,
                     None,
                     None,
                     None,
@@ -116,7 +117,7 @@ impl Command {
                 CommandType::PCMD_TentativeUpgrade => Self::SelectBattlegroupAbility(Pbgid::new(
                     tick,
                     command.index,
-                    pbgid,
+                    blueprint,
                     None,
                     None,
                     None,
@@ -127,12 +128,13 @@ impl Command {
                     command.action_type
                 ),
             },
-            ticks::CommandData::SourcedPbgid(pbgid, source_identifier) => match command.action_type
+            ticks::CommandData::SourcedPbgid(blueprint, source_identifier) => match command
+                .action_type
             {
                 CommandType::CMD_BuildSquad => Self::BuildSquad(SourcedPbgid::new(
                     tick,
                     command.index,
-                    pbgid,
+                    blueprint,
                     source_identifier,
                     None,
                     None,
@@ -142,7 +144,7 @@ impl Command {
                 CommandType::CMD_Upgrade => Self::BuildGlobalUpgrade(SourcedPbgid::new(
                     tick,
                     command.index,
-                    pbgid,
+                    blueprint,
                     source_identifier,
                     None,
                     None,
@@ -180,37 +182,18 @@ impl Command {
                     ),
                 }
             }
-            ticks::CommandData::SourceOnly(source) => match command.action_type {
-                CommandType::SCMD_Retreat => {
-                    Self::Retreat(Squads::new(tick, command.index, source))
-                }
-                CommandType::SCMD_Stop => Self::Stop(Squads::new(tick, command.index, source)),
-                CommandType::SCMD_UnloadSquads | CommandType::CMD_UnloadSquads => {
-                    Self::UnloadSquads(Squads::new(tick, command.index, source))
-                }
-                CommandType::PCMD_TentativeUpgradeRemoveAll => {
-                    Self::DeselectAllBattlegroupAbilities(Squads::new(tick, command.index, source))
-                }
-                CommandType::PCMD_Surrender => {
-                    Self::Surrender(Squads::new(tick, command.index, source))
-                }
-                _ => panic!(
-                    "a source-only command isn't being handled here! command type {:?}",
-                    command.action_type
-                ),
-            },
-            ticks::CommandData::SourcePbgid(source, pbgid) => match command.action_type {
+            ticks::CommandData::SourcePbgid(source, blueprint) => match command.action_type {
                 CommandType::SCMD_Upgrade => {
-                    Self::UpgradeSquad(SourcePbgid::new(tick, command.index, source, pbgid))
+                    Self::UpgradeSquad(SourcePbgid::new(tick, command.index, source, blueprint))
                 }
                 CommandType::SCMD_ReinforceUnit => {
-                    Self::Reinforce(SourcePbgid::new(tick, command.index, source, pbgid))
+                    Self::Reinforce(SourcePbgid::new(tick, command.index, source, blueprint))
                 }
                 // SCMD_/CMD_StopAbility stop the ability referenced by pbgid the same
                 // way regardless of whether it was issued by a squad or an entity —
                 // same effect, same variant.
                 CommandType::SCMD_StopAbility | CommandType::CMD_StopAbility => {
-                    Self::StopAbility(SourcePbgid::new(tick, command.index, source, pbgid))
+                    Self::StopAbility(SourcePbgid::new(tick, command.index, source, blueprint))
                 }
                 _ => panic!(
                     "a source pbgid command isn't being handled here! command type {:?}",
@@ -229,6 +212,15 @@ impl Command {
                     entity,
                 );
                 match command.action_type {
+                    CommandType::SCMD_Retreat => Self::Retreat(targeted),
+                    CommandType::SCMD_Stop => Self::Stop(targeted),
+                    CommandType::SCMD_UnloadSquads | CommandType::CMD_UnloadSquads => {
+                        Self::UnloadSquads(targeted)
+                    }
+                    CommandType::PCMD_TentativeUpgradeRemoveAll => {
+                        Self::DeselectAllBattlegroupAbilities(targeted)
+                    }
+                    CommandType::PCMD_Surrender => Self::Surrender(targeted),
                     CommandType::CMD_RallyPoint => Self::RallyPoint(targeted),
                     CommandType::CMD_Move => Self::Move(targeted),
                     CommandType::CMD_AttackFromHold => Self::AttackFromHold(targeted),
@@ -250,13 +242,13 @@ impl Command {
                     ),
                 }
             }
-            ticks::CommandData::PbgidTargeted(pbgid, targets) => match command.action_type {
+            ticks::CommandData::PbgidTargeted(blueprint, targets) => match command.action_type {
                 CommandType::PCMD_Ability => {
                     let (position, facing, orientation, entity) = split_targets(targets);
                     Self::UseBattlegroupAbility(Pbgid::new(
                         tick,
                         command.index,
-                        pbgid,
+                        blueprint,
                         position,
                         facing,
                         orientation,
@@ -268,14 +260,14 @@ impl Command {
                     command.action_type
                 ),
             },
-            ticks::CommandData::SourcedPbgidTargeted(pbgid, source_identifier, targets) => {
+            ticks::CommandData::SourcedPbgidTargeted(blueprint, source_identifier, targets) => {
                 match command.action_type {
                     CommandType::CMD_Ability => {
                         let (position, facing, orientation, entity) = split_targets(targets);
                         Self::UseAbility(SourcedPbgid::new(
                             tick,
                             command.index,
-                            pbgid,
+                            blueprint,
                             source_identifier,
                             position,
                             facing,
@@ -289,14 +281,14 @@ impl Command {
                     ),
                 }
             }
-            ticks::CommandData::Ability(source, pbgid, targets) => match command.action_type {
+            ticks::CommandData::Ability(source, blueprint, targets) => match command.action_type {
                 CommandType::SCMD_Ability => {
                     let (position, facing, orientation, entity) = split_targets(targets);
                     Self::UseAbilitySquad(Ability::new(
                         tick,
                         command.index,
                         source,
-                        pbgid,
+                        blueprint,
                         position,
                         facing,
                         orientation,
@@ -308,13 +300,13 @@ impl Command {
                     command.action_type
                 ),
             },
-            ticks::CommandData::Construction(pbgid, position, snapped, actual, entities) => {
+            ticks::CommandData::Construction(blueprint, position, snapped, actual, entities) => {
                 match command.action_type {
                     CommandType::PCMD_PlaceAndConstructEntities => {
                         Self::ConstructEntity(Construction::new(
                             tick,
                             command.index,
-                            pbgid,
+                            blueprint,
                             Position::new(position[0], position[1], position[2]),
                             Position::new(snapped[0], snapped[1], snapped[2]),
                             Position::new(actual[0], actual[1], actual[2]),
