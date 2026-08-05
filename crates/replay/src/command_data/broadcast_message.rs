@@ -1,25 +1,21 @@
-use crate::command_data::Source;
 use serde::{Deserialize, Serialize};
 
-/// A command format that contains just a source. `CMD_CancelConstruction`'s source can
-/// legitimately be a multi-squad selection (cancelling construction on several selected
-/// buildings at once), so — like [`super::SourcePbgid`] — this preserves the full
-/// [`Source`] rather than truncating it to a legacy `u16`.
+/// `PCMD_BroadcastMessage`'s payload: a UTF-8 JSON message describing a UI/scripted
+/// action (e.g. a ping, a toggled setting) rather than a chat message — see
+/// `crate::Message` for chat. This crate returns the raw JSON text rather than a parsed
+/// value, keeping this crate free of a JSON dependency; the shape varies by message
+/// type (observed keys include `sender`, `selection`, `command`, and `target`).
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Sourced {
+pub struct BroadcastMessage {
     tick: u32,
     index: u32,
-    source: Source,
+    json: String,
 }
 
-impl Sourced {
-    pub(crate) fn new(tick: u32, index: u32, source: Source) -> Self {
-        Self {
-            tick,
-            index,
-            source,
-        }
+impl BroadcastMessage {
+    pub(crate) fn new(tick: u32, index: u32, json: String) -> Self {
+        Self { tick, index, json }
     }
 
     /// This value is the tick at which the command was found while parsing the replay, which
@@ -36,8 +32,8 @@ impl Sourced {
     pub fn index(&self) -> u32 {
         self.index
     }
-    /// Who or what issued this command.
-    pub fn source(&self) -> &Source {
-        &self.source
+    /// The raw JSON message text.
+    pub fn json(&self) -> &str {
+        &self.json
     }
 }

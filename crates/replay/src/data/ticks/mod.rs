@@ -3,7 +3,9 @@ mod command;
 mod command_tick;
 mod message;
 mod message_tick;
+pub(crate) mod payload;
 mod tick;
+pub(crate) mod value;
 
 pub use crate::data::ticks::bundle::Bundle;
 pub use crate::data::ticks::command::Command;

@@ -1,34 +1,39 @@
-use crate::command_data::{Orientation, Position};
+use crate::command_data::Position;
 use crate::data::ticks::value::Blueprint;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// A simple command format that contains an entity pbgid, and optionally targeting
-/// fields (position, facing, orientation, target entity) for the handful of command
-/// types whose payload carries them — `None` for commands whose payload doesn't.
+/// A command format used by `PCMD_PlaceAndConstructEntities`: an entity pbgid, three
+/// positions, and the internal engine IDs of the entities the game spawned as a result.
+///
+/// The three positions consistently differ only slightly from one another (position and
+/// snapped position share very similar coordinates; final position sometimes differs
+/// more) — read as the raw cursor position, the position snapped to the placement grid,
+/// and the final validated placement, though the exact semantic distinction between
+/// them hasn't been independently confirmed against an authoritative source.
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-pub struct Pbgid {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Construction {
     tick: u32,
     index: u32,
     pbgid: u32,
     mod_uuid: Option<Uuid>,
-    position: Option<Position>,
-    facing: Option<f32>,
-    orientation: Option<Orientation>,
-    entity: Option<u32>,
+    position: Position,
+    snapped_position: Position,
+    final_position: Position,
+    entities: Vec<u32>,
 }
 
-impl Pbgid {
+impl Construction {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         tick: u32,
         index: u32,
         blueprint: Blueprint,
-        position: Option<Position>,
-        facing: Option<f32>,
-        orientation: Option<Orientation>,
-        entity: Option<u32>,
+        position: Position,
+        snapped_position: Position,
+        final_position: Position,
+        entities: Vec<u32>,
     ) -> Self {
         Self {
             tick,
@@ -36,9 +41,9 @@ impl Pbgid {
             pbgid: blueprint.pbgid,
             mod_uuid: blueprint.mod_uuid,
             position,
-            facing,
-            orientation,
-            entity,
+            snapped_position,
+            final_position,
+            entities,
         }
     }
 
@@ -71,20 +76,22 @@ impl Pbgid {
     pub fn mod_uuid(&self) -> Option<Uuid> {
         self.mod_uuid
     }
-    /// The target world-space position, if this command carried one.
-    pub fn position(&self) -> Option<Position> {
+    /// The raw cursor position where placement was requested. See the type-level docs
+    /// on the uncertainty around the exact distinction between the three positions.
+    pub fn position(&self) -> Position {
         self.position
     }
-    /// The target facing angle in radians, if this command carried one.
-    pub fn facing(&self) -> Option<f32> {
-        self.facing
+    /// The position snapped to the placement grid.
+    pub fn snapped_position(&self) -> Position {
+        self.snapped_position
     }
-    /// The target orientation, if this command carried one.
-    pub fn orientation(&self) -> Option<Orientation> {
-        self.orientation
+    /// The final, validated placement position.
+    pub fn final_position(&self) -> Position {
+        self.final_position
     }
-    /// The internal engine ID of the targeted entity, if this command carried one.
-    pub fn entity(&self) -> Option<u32> {
-        self.entity
+    /// The internal engine IDs of the entities spawned as a result of this command
+    /// (e.g. the constructed building, and possibly other associated entities).
+    pub fn entities(&self) -> &[u32] {
+        &self.entities
     }
 }

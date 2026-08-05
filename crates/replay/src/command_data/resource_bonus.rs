@@ -1,24 +1,22 @@
-use crate::command_data::Source;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
-/// A command format that contains just a source. `CMD_CancelConstruction`'s source can
-/// legitimately be a multi-squad selection (cancelling construction on several selected
-/// buildings at once), so — like [`super::SourcePbgid`] — this preserves the full
-/// [`Source`] rather than truncating it to a legacy `u16`.
+/// `PCMD_AIPlayer_ResourceBonus`'s payload: a map from resource name (e.g.
+/// `"manpower"`, `"fuel"`, `"requisition"`) to a bonus multiplier (`1.0` is no bonus).
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Sourced {
+pub struct ResourceBonus {
     tick: u32,
     index: u32,
-    source: Source,
+    values: HashMap<String, f32>,
 }
 
-impl Sourced {
-    pub(crate) fn new(tick: u32, index: u32, source: Source) -> Self {
+impl ResourceBonus {
+    pub(crate) fn new(tick: u32, index: u32, values: HashMap<String, f32>) -> Self {
         Self {
             tick,
             index,
-            source,
+            values,
         }
     }
 
@@ -36,8 +34,8 @@ impl Sourced {
     pub fn index(&self) -> u32 {
         self.index
     }
-    /// Who or what issued this command.
-    pub fn source(&self) -> &Source {
-        &self.source
+    /// The resource bonus multipliers, keyed by resource name.
+    pub fn values(&self) -> &HashMap<String, f32> {
+        &self.values
     }
 }

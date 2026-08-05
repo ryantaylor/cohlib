@@ -127,6 +127,7 @@ impl Replay {
 
 fn replay_from_data(data: &ReplayData) -> Replay {
     let commands = data.commands();
+    let camera_tracks = data.camera_tracks();
     let messages = data.messages();
     let map = map_from_data(data.map_data());
     let starting_positions = map.starting_positions().to_vec();
@@ -142,7 +143,15 @@ fn replay_from_data(data: &ReplayData) -> Replay {
             .game_data()
             .players
             .iter()
-            .map(|player| player_from_data(player, &messages, &commands, &starting_positions))
+            .map(|player| {
+                player_from_data(
+                    player,
+                    &messages,
+                    &commands,
+                    &camera_tracks,
+                    &starting_positions,
+                )
+            })
             .collect(),
         map,
     }

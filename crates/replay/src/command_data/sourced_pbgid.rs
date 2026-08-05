@@ -1,22 +1,48 @@
+use crate::command_data::{Orientation, Position};
+use crate::data::ticks::value::Blueprint;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-/// A command format with both an entity pbgid and a source identifier.
+/// A command format with an entity pbgid and a source identifier, and optionally
+/// targeting fields (position, facing, orientation, target entity) for the handful of
+/// command types whose payload carries them — `None` for commands whose payload
+/// doesn't.
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct SourcedPbgid {
     tick: u32,
     index: u32,
     pbgid: u32,
+    mod_uuid: Option<Uuid>,
     source_identifier: u16,
+    position: Option<Position>,
+    facing: Option<f32>,
+    orientation: Option<Orientation>,
+    entity: Option<u32>,
 }
 
 impl SourcedPbgid {
-    pub(crate) fn new(tick: u32, index: u32, pbgid: u32, source_identifier: u16) -> Self {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        tick: u32,
+        index: u32,
+        blueprint: Blueprint,
+        source_identifier: u16,
+        position: Option<Position>,
+        facing: Option<f32>,
+        orientation: Option<Orientation>,
+        entity: Option<u32>,
+    ) -> Self {
         Self {
             tick,
             index,
-            pbgid,
+            pbgid: blueprint.pbgid,
+            mod_uuid: blueprint.mod_uuid,
             source_identifier,
+            position,
+            facing,
+            orientation,
+            entity,
         }
     }
 
@@ -37,13 +63,38 @@ impl SourcedPbgid {
     /// Internal ID that uniquely identifies entity associated with the command. This value can be
     /// matched to CoH3 attribute files in order to determine the entity in question. Note that,
     /// while rare, it is possible that this value may change between patches for the same entity.
+    ///
+    /// This is only globally unique when `Self::mod_uuid` is `None`. Otherwise the ID is
+    /// scoped to that mod's content and will not match base game attribute data.
     pub fn pbgid(&self) -> u32 {
         self.pbgid
+    }
+    /// The UUID of the mod content pack defining the blueprint `Self::pbgid` refers to,
+    /// or `None` when it is base game content. Note that this is not the same value as
+    /// `Replay::mod_uuid`, which identifies the mod the match itself was played under.
+    pub fn mod_uuid(&self) -> Option<Uuid> {
+        self.mod_uuid
     }
     /// This value corresponds to the internal identifier given by the game engine to the entity
     /// that is the source of the command. If you know the identifier for a given entity, you can
     /// use this value to link this command to that entity.
     pub fn source_identifier(&self) -> u16 {
         self.source_identifier
+    }
+    /// The target world-space position, if this command carried one.
+    pub fn position(&self) -> Option<Position> {
+        self.position
+    }
+    /// The target facing angle in radians, if this command carried one.
+    pub fn facing(&self) -> Option<f32> {
+        self.facing
+    }
+    /// The target orientation, if this command carried one.
+    pub fn orientation(&self) -> Option<Orientation> {
+        self.orientation
+    }
+    /// The internal engine ID of the targeted entity, if this command carried one.
+    pub fn entity(&self) -> Option<u32> {
+        self.entity
     }
 }
