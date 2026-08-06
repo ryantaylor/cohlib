@@ -343,6 +343,32 @@ fn parse_no_starting_positions() {
     assert!(replay.starting_positions().is_empty());
 }
 
+/// Since chunk version 4595383, each player is followed by a count-prefixed list of
+/// 6-byte records; it's empty for ordinary human players (so earlier fixtures never
+/// exercised it), but this build-48837 automatch has two AI-filled slots that leave it
+/// non-empty. The parser used to treat it as a fixed 4-byte skip, which desynced every
+/// player after the first one whose list was non-empty.
+#[test]
+fn parse_ai_filled_player_trailer() {
+    let data = include_bytes!("../replays/v48837_ai_filled_player_trailer.rec");
+    let replay = Replay::from_bytes(data);
+    assert!(replay.is_ok());
+    let unwrapped = replay.unwrap();
+    assert_eq!(
+        unwrapped
+            .players()
+            .iter()
+            .map(|player| (player.name(), player.human()))
+            .collect::<Vec<(&str, bool)>>(),
+        vec![
+            ("A DEAD RABBIT", true),
+            ("yue991126", true),
+            ("CPU - 专家", false),
+            ("CPU - 专家", false),
+        ]
+    );
+}
+
 #[test]
 fn parse_unusual_team_id() {
     let data = include_bytes!("../replays/unusual_team_id.rec");
