@@ -1,6 +1,10 @@
 //! cohlib CLI — maintainer tooling for managing the bundled game data.
 
-use std::{path::{Path, PathBuf}, process, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    process,
+    time::Duration,
+};
 
 use cohlib::{extract_build_order, Replay, VersionedStore};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -285,11 +289,12 @@ fn cmd_import(args: &[String]) {
 }
 
 fn read_exe_version(exe_path: &Path) -> Result<u32, String> {
-    let bytes = std::fs::read(exe_path)
-        .map_err(|e| format!("cannot read {}: {e}", exe_path.display()))?;
+    let bytes =
+        std::fs::read(exe_path).map_err(|e| format!("cannot read {}: {e}", exe_path.display()))?;
 
     // "VS_VERSION_INFO" as UTF-16 LE
-    const MAGIC: &[u8] = b"V\x00S\x00_\x00V\x00E\x00R\x00S\x00I\x00O\x00N\x00_\x00I\x00N\x00F\x00O\x00";
+    const MAGIC: &[u8] =
+        b"V\x00S\x00_\x00V\x00E\x00R\x00S\x00I\x00O\x00N\x00_\x00I\x00N\x00F\x00O\x00";
     let magic_pos = bytes
         .windows(MAGIC.len())
         .position(|w| w == MAGIC)
@@ -320,7 +325,9 @@ fn read_exe_version(exe_path: &Path) -> Result<u32, String> {
     //  +16 dwProductVersionMS = (major << 16) | minor
     //  +20 dwProductVersionLS = (build << 16) | revision  <- build number
     let product_version_ls = u32::from_le_bytes(
-        bytes[sig_pos + 20..sig_pos + 24].try_into().expect("4 bytes"),
+        bytes[sig_pos + 20..sig_pos + 24]
+            .try_into()
+            .expect("4 bytes"),
     );
     Ok(product_version_ls >> 16)
 }
@@ -407,7 +414,13 @@ fn parse_import_args(
         scenarios_sga: Some(scenarios_sga_path.clone()),
         images_dir: dir,
     });
-    (depot_path, version, output_dir, images_config, scenarios_sga_path)
+    (
+        depot_path,
+        version,
+        output_dir,
+        images_config,
+        scenarios_sga_path,
+    )
 }
 
 /// Re-serialize all game_data.json files in a data directory through the current
@@ -489,12 +502,7 @@ fn cmd_build_order(args: &[String]) {
 
     let players = replay.players();
     for (idx, player) in players.iter().enumerate() {
-        println!(
-            "Player {}: {} ({:?})",
-            idx,
-            player.name(),
-            player.faction()
-        );
+        println!("Player {}: {} ({:?})", idx, player.name(), player.faction());
 
         let build_order = match extract_build_order(&replay, idx, &store, true) {
             Ok(bo) => bo,

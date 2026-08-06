@@ -992,7 +992,10 @@ mod tests {
             entity.pbgid, 2169222,
             "variant-level pbgid must be captured, not the nested pass_types pbgid"
         );
-        assert_eq!(entity.fields.get("screen_name").map(|s| s.as_str()), Some("11272942"));
+        assert_eq!(
+            entity.fields.get("screen_name").map(|s| s.as_str()),
+            Some("11272942")
+        );
         assert_eq!(
             entity.fields.get("icon_name").map(|s| s.as_str()),
             Some("races\\german\\buildings\\bunker_mortar_autobuild_ger")
@@ -1094,9 +1097,9 @@ mod tests {
 </instance>"#;
         let entity = parse_entity_xml(PARADROP_XML, "instances/abilities/paradrop.xml").unwrap();
         // Should capture both the intent and the category as "spawns"
-        assert!(entity
-            .spawns
-            .contains(&"ai\\ai_ability_intents\\spawns\\air_and_sea_commandos_ability_intent".to_string()));
+        assert!(entity.spawns.contains(
+            &"ai\\ai_ability_intents\\spawns\\air_and_sea_commandos_ability_intent".to_string()
+        ));
         assert!(entity
             .spawns
             .contains(&"ability_category\\call_in_ability".to_string()));
@@ -1148,14 +1151,12 @@ mod tests {
         let gd = extract_game_data(&entries, LocaleStore(Default::default()), 99, || {}).unwrap();
         let child = gd.abilities.get(&10002).unwrap();
         assert_eq!(
-            child.icon_name,
-            "common/abilities/strafing_run_p47_us",
+            child.icon_name, "common/abilities/strafing_run_p47_us",
             "child should inherit parent's icon when it has none"
         );
         let parent = gd.abilities.get(&10001).unwrap();
         assert_eq!(
-            parent.icon_name,
-            "common/abilities/strafing_run_p47_us",
+            parent.icon_name, "common/abilities/strafing_run_p47_us",
             "parent's own icon should be unchanged"
         );
     }
@@ -1226,14 +1227,12 @@ mod tests {
         let gd = extract_game_data(&entries, LocaleStore(Default::default()), 99, || {}).unwrap();
         let child = gd.abilities.get(&20003).unwrap();
         assert_eq!(
-            child.icon_name,
-            "common/abilities/strafing_run_generic",
+            child.icon_name, "common/abilities/strafing_run_generic",
             "grandchild should inherit grandparent's icon when neither child nor parent have one"
         );
         let parent = gd.abilities.get(&20002).unwrap();
         assert_eq!(
-            parent.icon_name,
-            "common/abilities/strafing_run_generic",
+            parent.icon_name, "common/abilities/strafing_run_generic",
             "parent should also inherit grandparent's icon"
         );
     }

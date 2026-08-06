@@ -1,16 +1,16 @@
-/// Integration tests for mipped RRTEX extraction.
-///
-/// Fixture files were extracted from `anvil/archives/UI.sga` and
-/// `anvil/archives/ScenariosMP.sga` in the CoH3 depot.
-///
-/// Texture variants encountered:
-/// - Hybrid: small mips raw, large mips as sequential zlib streams
-///   (american_mipped, italian_infantry_ak_icon_mipped)
-/// - Pure zlib: all mips stored as sequential zlib streams, smallest first
-///   (german_mipped, spec_ops_us_icon_mipped, special_weapons_us_icon_mipped,
-///    indian_artillery_uk_icon_mipped)
-/// - Non-mipped (mip_count=1): large textures split across many 64 KiB zlib streams
-///   (semois map minimaps)
+//! Integration tests for mipped RRTEX extraction.
+//!
+//! Fixture files were extracted from `anvil/archives/UI.sga` and
+//! `anvil/archives/ScenariosMP.sga` in the CoH3 depot.
+//!
+//! Texture variants encountered:
+//! - Hybrid: small mips raw, large mips as sequential zlib streams
+//!   (american_mipped, italian_infantry_ak_icon_mipped)
+//! - Pure zlib: all mips stored as sequential zlib streams, smallest first
+//!   (german_mipped, spec_ops_us_icon_mipped, special_weapons_us_icon_mipped,
+//!   indian_artillery_uk_icon_mipped)
+//! - Non-mipped (mip_count=1): large textures split across many 64 KiB zlib streams
+//!   (semois map minimaps)
 
 const AMERICAN: &[u8] = include_bytes!("fixtures/american_mipped.rrtex");
 const ITALIAN_INFANTRY_AK: &[u8] = include_bytes!("fixtures/italian_infantry_ak_icon_mipped.rrtex");
