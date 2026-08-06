@@ -14,7 +14,7 @@ mod player;
 pub mod error;
 pub use error::Error;
 
-pub use command::Command;
+pub use command::{Command, CommandPayloadRef};
 pub use command_type::CommandType;
 pub use map::{Map, MapPoint, StartingPosition};
 pub use message::Message;

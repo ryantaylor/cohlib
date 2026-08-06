@@ -1,4 +1,5 @@
 use crate::command_data::Source;
+use crate::command_type::CommandType;
 use serde::{Deserialize, Serialize};
 
 /// A command format that contains just a source. `CMD_CancelConstruction`'s source can
@@ -8,20 +9,26 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Sourced {
+    action_type: CommandType,
     tick: u32,
     index: u32,
     source: Source,
 }
 
 impl Sourced {
-    pub(crate) fn new(tick: u32, index: u32, source: Source) -> Self {
+    pub(crate) fn new(action_type: CommandType, tick: u32, index: u32, source: Source) -> Self {
         Self {
+            action_type,
             tick,
             index,
             source,
         }
     }
 
+    /// The Relic wire command type this command was decoded from.
+    pub fn action_type(&self) -> CommandType {
+        self.action_type
+    }
     /// This value is the tick at which the command was found while parsing the replay, which
     /// represents the time in the replay at which it was executed. Because CoH3's engine runs at 8
     /// ticks per second, you can divide this value by 8 to get the number of seconds since the

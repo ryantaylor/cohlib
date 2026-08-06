@@ -6,10 +6,11 @@ pub use data::{
 };
 pub use error::Error;
 pub use replay::command_data::{
-    Ability, BroadcastMessage, CameraCounts, CameraTrack, Construction, Orientation, Position,
-    ResourceBonus, Source, SourcePbgid, Targeted,
+    Ability, BroadcastMessage, CameraCounts, CameraTrack, CommandPayload, Construction, Empty,
+    Orientation, Pbgid, Position, ResourceBonus, Source, SourcePbgid, Sourced, SourcedIndex,
+    SourcedPbgid, Targeted, Unknown,
 };
 pub use replay::{
-    parse_replay, Command, CommandType, Faction, GameType, Map, MapPoint, Message, Player, Replay,
-    StartingPosition, Team,
+    parse_replay, Command, CommandPayloadRef, CommandType, Faction, GameType, Map, MapPoint,
+    Message, Player, Replay, StartingPosition, Team,
 };

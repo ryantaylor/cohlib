@@ -5,20 +5,25 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct Unknown {
+    action_type: CommandType,
     tick: u32,
     index: u32,
-    action_type: CommandType,
 }
 
 impl Unknown {
-    pub(crate) fn new(tick: u32, index: u32, action_type: CommandType) -> Self {
+    pub(crate) fn new(action_type: CommandType, tick: u32, index: u32) -> Self {
         Self {
+            action_type,
             tick,
             index,
-            action_type,
         }
     }
 
+    /// This value identifies the type of the command (build, move, stop, etc.). Commands with
+    /// similar functionality can be grouped by this value.
+    pub fn action_type(&self) -> CommandType {
+        self.action_type
+    }
     /// This value is the tick at which the command was found while parsing the replay, which
     /// represents the time in the replay at which it was executed. Because CoH3's engine runs at 8
     /// ticks per second, you can divide this value by 8 to get the number of seconds since the
@@ -33,10 +38,5 @@ impl Unknown {
     /// not triggered by player action will have an index of 0.
     pub fn index(&self) -> u32 {
         self.index
-    }
-    /// This value identifies the type of the command (build, move, stop, etc.). Commands with
-    /// similar functionality can be grouped by this value.
-    pub fn action_type(&self) -> CommandType {
-        self.action_type
     }
 }

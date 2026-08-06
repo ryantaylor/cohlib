@@ -1,4 +1,5 @@
 use crate::command_data::Position;
+use crate::command_type::CommandType;
 use crate::data::ticks::value::Blueprint;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -14,6 +15,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Construction {
+    action_type: CommandType,
     tick: u32,
     index: u32,
     pbgid: u32,
@@ -27,6 +29,7 @@ pub struct Construction {
 impl Construction {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
+        action_type: CommandType,
         tick: u32,
         index: u32,
         blueprint: Blueprint,
@@ -36,6 +39,7 @@ impl Construction {
         entities: Vec<u32>,
     ) -> Self {
         Self {
+            action_type,
             tick,
             index,
             pbgid: blueprint.pbgid,
@@ -47,6 +51,10 @@ impl Construction {
         }
     }
 
+    /// The Relic wire command type this command was decoded from.
+    pub fn action_type(&self) -> CommandType {
+        self.action_type
+    }
     /// This value is the tick at which the command was found while parsing the replay, which
     /// represents the time in the replay at which it was executed. Because CoH3's engine runs at 8
     /// ticks per second, you can divide this value by 8 to get the number of seconds since the

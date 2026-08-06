@@ -2,8 +2,9 @@
 
 use crate::{
     command_data::{
-        Ability, BroadcastMessage, Construction, Empty, Orientation, Pbgid, Position,
-        ResourceBonus, SourcePbgid, Sourced, SourcedIndex, SourcedPbgid, Targeted, Unknown,
+        Ability, BroadcastMessage, CommandPayload, Construction, Empty, Orientation, Pbgid,
+        Position, ResourceBonus, Source, SourcePbgid, Sourced, SourcedIndex, SourcedPbgid,
+        Targeted, Unknown,
     },
     command_type::CommandType,
     data::ticks::{self, value::TargetValues},
@@ -17,6 +18,10 @@ use serde::{Deserialize, Serialize};
 /// sent them. To access, see `Player::commands`.
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "magnus",
+    magnus::wrap(class = "CohLib::Command", free_immediately, size)
+)]
 pub enum Command {
     AITakeover(Empty),
     /// A player's AI issuing itself a resource bonus, `PCMD_AIPlayer_ResourceBonus`.
@@ -94,20 +99,147 @@ pub enum Command {
     Unknown(Unknown),
 }
 
+/// A borrowed view of a command's payload, discriminated by payload *shape* rather than
+/// by semantic variant. Twelve shapes cover all 37 variants, so consumers that only
+/// care about the data layout — serializers, hash builders — match on twelve arms
+/// instead of thirty-seven.
+#[derive(Debug, Clone, Copy)]
+pub enum CommandPayloadRef<'a> {
+    Ability(&'a Ability),
+    BroadcastMessage(&'a BroadcastMessage),
+    Construction(&'a Construction),
+    Empty(&'a Empty),
+    Pbgid(&'a Pbgid),
+    ResourceBonus(&'a ResourceBonus),
+    Sourced(&'a Sourced),
+    SourcedIndex(&'a SourcedIndex),
+    SourcedPbgid(&'a SourcedPbgid),
+    SourcePbgid(&'a SourcePbgid),
+    Targeted(&'a Targeted),
+    Unknown(&'a Unknown),
+}
+
+/// Generates `Command`'s variant-wide dispatch from a single copy of the variant list,
+/// so adding a variant doesn't mean editing several parallel 37-arm matches by hand.
+/// Each generated match is exhaustive, so any drift between this list and the `Command`
+/// enum above is a compile error in both directions — don't add a `_ =>` catch-all arm
+/// to any of them, since that would silently defeat the guarantee.
+macro_rules! command_variants {
+    ($($variant:ident($payload:ident)),+ $(,)?) => {
+        impl Command {
+            /// cohlib's own semantic name for this command, e.g. `"BuildSquad"`. For
+            /// the Relic wire name it was decoded from — which is *not* derivable from
+            /// this, since several wire types can share a variant — see
+            /// [`Self::action_type`].
+            pub fn variant_name(&self) -> &'static str {
+                match self { $(Self::$variant(_) => stringify!($variant),)+ }
+            }
+
+            /// This command's payload, discriminated by shape.
+            pub fn payload(&self) -> CommandPayloadRef<'_> {
+                match self { $(Self::$variant(data) => CommandPayloadRef::$payload(data),)+ }
+            }
+
+            fn common(&self) -> &dyn CommandPayload {
+                match self { $(Self::$variant(data) => data,)+ }
+            }
+        }
+    };
+}
+
+command_variants! {
+    AITakeover(Empty),
+    AIResourceBonus(ResourceBonus),
+    Attack(Targeted),
+    AttackMove(Targeted),
+    AttackFromHold(Targeted),
+    Broadcast(BroadcastMessage),
+    BuildStructure(Targeted),
+    BuildGlobalUpgrade(SourcedPbgid),
+    BuildSquad(SourcedPbgid),
+    CancelConstruction(Sourced),
+    CancelProduction(SourcedIndex),
+    Capture(Targeted),
+    CaptureTeamWeapon(Targeted),
+    ConstructEntity(Construction),
+    DeselectAllBattlegroupAbilities(Targeted),
+    DetonateCharges(Targeted),
+    Face(Targeted),
+    Load(Targeted),
+    Move(Targeted),
+    MoveSquad(Targeted),
+    PickUpSimItem(Targeted),
+    Recrew(Targeted),
+    Reinforce(SourcePbgid),
+    Retreat(Targeted),
+    RallyPoint(Targeted),
+    SelectBattlegroup(Pbgid),
+    SelectBattlegroupAbility(Pbgid),
+    Stop(Targeted),
+    StopAbility(SourcePbgid),
+    Surrender(Targeted),
+    Unload(Targeted),
+    UnloadSquads(Targeted),
+    UpgradeSquad(SourcePbgid),
+    UseAbility(SourcedPbgid),
+    UseAbilitySquad(Ability),
+    UseBattlegroupAbility(Pbgid),
+    Unknown(Unknown),
+}
+
+impl Command {
+    /// The engine tick at which the command was issued. CoH3 runs at 8 ticks per
+    /// second, so divide by 8 for seconds since the replay began.
+    pub fn tick(&self) -> u32 {
+        self.common().tick()
+    }
+
+    /// The index of this command relative to the player who issued it.
+    pub fn index(&self) -> u32 {
+        self.common().index()
+    }
+
+    /// The Relic wire command type this command was decoded from. Several wire types
+    /// decode to the same variant — `SCMD_StopAbility` and `CMD_StopAbility` both
+    /// produce [`Command::StopAbility`] — so this preserves information the variant
+    /// alone throws away.
+    pub fn action_type(&self) -> CommandType {
+        self.common().action_type()
+    }
+
+    /// The blueprint this command references, or `None` for commands that reference
+    /// none. `Command::UseAbilitySquad` can carry a payload with no pbgid even though
+    /// its shape has one, so this being `None` doesn't imply the shape lacks the field.
+    pub fn pbgid(&self) -> Option<u32> {
+        self.common().pbgid()
+    }
+
+    /// Who issued the command, for the payload shapes that model it as a full
+    /// [`Source`]. `None` for shapes that carry only a bare `source_identifier`.
+    pub fn source(&self) -> Option<&Source> {
+        self.common().source()
+    }
+}
+
 impl Command {
     pub(crate) fn from_data_command_at_tick(command: ticks::Command, tick: u32) -> Self {
+        let action_type = command.action_type;
+        let index = command.index;
         match command.data {
-            ticks::CommandData::Empty => match command.action_type {
-                CommandType::PCMD_AIPlayer => Self::AITakeover(Empty::new(tick)),
+            ticks::CommandData::Empty => match action_type {
+                CommandType::PCMD_AIPlayer => {
+                    Self::AITakeover(Empty::new(action_type, tick, index))
+                }
                 _ => panic!(
                     "an empty command isn't being handled here! command type {:?}",
-                    command.action_type
+                    action_type
                 ),
             },
-            ticks::CommandData::Pbgid(blueprint) => match command.action_type {
+            ticks::CommandData::Pbgid(blueprint) => match action_type {
                 CommandType::PCMD_InstantUpgrade => Self::SelectBattlegroup(Pbgid::new(
+                    action_type,
                     tick,
-                    command.index,
+                    index,
                     blueprint,
                     None,
                     None,
@@ -115,8 +247,9 @@ impl Command {
                     None,
                 )),
                 CommandType::PCMD_TentativeUpgrade => Self::SelectBattlegroupAbility(Pbgid::new(
+                    action_type,
                     tick,
-                    command.index,
+                    index,
                     blueprint,
                     None,
                     None,
@@ -125,15 +258,14 @@ impl Command {
                 )),
                 _ => panic!(
                     "a pbgid command isn't being handled here! command type {:?}",
-                    command.action_type
+                    action_type
                 ),
             },
-            ticks::CommandData::SourcedPbgid(blueprint, source_identifier) => match command
-                .action_type
-            {
+            ticks::CommandData::SourcedPbgid(blueprint, source_identifier) => match action_type {
                 CommandType::CMD_BuildSquad => Self::BuildSquad(SourcedPbgid::new(
+                    action_type,
                     tick,
-                    command.index,
+                    index,
                     blueprint,
                     source_identifier,
                     None,
@@ -142,8 +274,9 @@ impl Command {
                     None,
                 )),
                 CommandType::CMD_Upgrade => Self::BuildGlobalUpgrade(SourcedPbgid::new(
+                    action_type,
                     tick,
-                    command.index,
+                    index,
                     blueprint,
                     source_identifier,
                     None,
@@ -153,65 +286,82 @@ impl Command {
                 )),
                 _ => panic!(
                     "a sourced pbgid command isn't being handled here! command type {:?}",
-                    command.action_type
+                    action_type
                 ),
             },
-            ticks::CommandData::Sourced(source) => match command.action_type {
-                CommandType::CMD_CancelConstruction => {
-                    Self::CancelConstruction(Sourced::new(tick, command.index, source))
+            ticks::CommandData::Sourced(source) => match action_type {
+                CommandType::CMD_CancelConstruction => Self::CancelConstruction(Sourced::new(
+                    action_type,
+                    tick,
+                    index,
+                    source,
+                )),
+                _ => panic!(
+                    "a sourced command isn't being handled here! command type {:?}",
+                    action_type
+                ),
+            },
+            ticks::CommandData::SourcedIndex(source_identifier, queue_index) => match action_type
+            {
+                // SCMD_/PCMD_CancelProduction cancel a queued production item the
+                // same way CMD_CancelProduction does, just issued from a squad's or
+                // the player's UI instead of a building's — same effect, same
+                // variant.
+                CommandType::CMD_CancelProduction
+                | CommandType::SCMD_CancelProduction
+                | CommandType::PCMD_CancelProduction => {
+                    Self::CancelProduction(SourcedIndex::new(
+                        action_type,
+                        tick,
+                        index,
+                        source_identifier,
+                        queue_index,
+                    ))
                 }
                 _ => panic!(
                     "a sourced command isn't being handled here! command type {:?}",
-                    command.action_type
+                    action_type
                 ),
             },
-            ticks::CommandData::SourcedIndex(source_identifier, queue_index) => {
-                match command.action_type {
-                    // SCMD_/PCMD_CancelProduction cancel a queued production item the
-                    // same way CMD_CancelProduction does, just issued from a squad's or
-                    // the player's UI instead of a building's — same effect, same
-                    // variant.
-                    CommandType::CMD_CancelProduction
-                    | CommandType::SCMD_CancelProduction
-                    | CommandType::PCMD_CancelProduction => Self::CancelProduction(
-                        SourcedIndex::new(tick, command.index, source_identifier, queue_index),
-                    ),
-                    _ => panic!(
-                        "a sourced command isn't being handled here! command type {:?}",
-                        command.action_type
-                    ),
-                }
-            }
-            ticks::CommandData::SourcePbgid(source, blueprint) => match command.action_type {
-                CommandType::SCMD_Upgrade => {
-                    Self::UpgradeSquad(SourcePbgid::new(tick, command.index, source, blueprint))
-                }
-                CommandType::SCMD_ReinforceUnit => {
-                    Self::Reinforce(SourcePbgid::new(tick, command.index, source, blueprint))
-                }
+            ticks::CommandData::SourcePbgid(source, blueprint) => match action_type {
+                CommandType::SCMD_Upgrade => Self::UpgradeSquad(SourcePbgid::new(
+                    action_type,
+                    tick,
+                    index,
+                    source,
+                    blueprint,
+                )),
+                CommandType::SCMD_ReinforceUnit => Self::Reinforce(SourcePbgid::new(
+                    action_type,
+                    tick,
+                    index,
+                    source,
+                    blueprint,
+                )),
                 // SCMD_/CMD_StopAbility stop the ability referenced by pbgid the same
                 // way regardless of whether it was issued by a squad or an entity —
                 // same effect, same variant.
                 CommandType::SCMD_StopAbility | CommandType::CMD_StopAbility => {
-                    Self::StopAbility(SourcePbgid::new(tick, command.index, source, blueprint))
+                    Self::StopAbility(SourcePbgid::new(action_type, tick, index, source, blueprint))
                 }
                 _ => panic!(
                     "a source pbgid command isn't being handled here! command type {:?}",
-                    command.action_type
+                    action_type
                 ),
             },
             ticks::CommandData::Targeted(source, targets) => {
                 let (position, facing, orientation, entity) = split_targets(targets);
                 let targeted = Targeted::new(
+                    action_type,
                     tick,
-                    command.index,
+                    index,
                     source,
                     position,
                     facing,
                     orientation,
                     entity,
                 );
-                match command.action_type {
+                match action_type {
                     CommandType::SCMD_Retreat => Self::Retreat(targeted),
                     CommandType::SCMD_Stop => Self::Stop(targeted),
                     CommandType::SCMD_UnloadSquads | CommandType::CMD_UnloadSquads => {
@@ -238,16 +388,17 @@ impl Command {
                     CommandType::PCMD_DetonateCharges => Self::DetonateCharges(targeted),
                     _ => panic!(
                         "a targeted command isn't being handled here! command type {:?}",
-                        command.action_type
+                        action_type
                     ),
                 }
             }
-            ticks::CommandData::PbgidTargeted(blueprint, targets) => match command.action_type {
+            ticks::CommandData::PbgidTargeted(blueprint, targets) => match action_type {
                 CommandType::PCMD_Ability => {
                     let (position, facing, orientation, entity) = split_targets(targets);
                     Self::UseBattlegroupAbility(Pbgid::new(
+                        action_type,
                         tick,
-                        command.index,
+                        index,
                         blueprint,
                         position,
                         facing,
@@ -257,16 +408,17 @@ impl Command {
                 }
                 _ => panic!(
                     "a pbgid-targeted command isn't being handled here! command type {:?}",
-                    command.action_type
+                    action_type
                 ),
             },
             ticks::CommandData::SourcedPbgidTargeted(blueprint, source_identifier, targets) => {
-                match command.action_type {
+                match action_type {
                     CommandType::CMD_Ability => {
                         let (position, facing, orientation, entity) = split_targets(targets);
                         Self::UseAbility(SourcedPbgid::new(
+                            action_type,
                             tick,
-                            command.index,
+                            index,
                             blueprint,
                             source_identifier,
                             position,
@@ -277,16 +429,17 @@ impl Command {
                     }
                     _ => panic!(
                         "a sourced pbgid-targeted command isn't being handled here! command type {:?}",
-                        command.action_type
+                        action_type
                     ),
                 }
             }
-            ticks::CommandData::Ability(source, blueprint, targets) => match command.action_type {
+            ticks::CommandData::Ability(source, blueprint, targets) => match action_type {
                 CommandType::SCMD_Ability => {
                     let (position, facing, orientation, entity) = split_targets(targets);
                     Self::UseAbilitySquad(Ability::new(
+                        action_type,
                         tick,
-                        command.index,
+                        index,
                         source,
                         blueprint,
                         position,
@@ -297,15 +450,16 @@ impl Command {
                 }
                 _ => panic!(
                     "an ability command isn't being handled here! command type {:?}",
-                    command.action_type
+                    action_type
                 ),
             },
             ticks::CommandData::Construction(blueprint, position, snapped, actual, entities) => {
-                match command.action_type {
+                match action_type {
                     CommandType::PCMD_PlaceAndConstructEntities => {
                         Self::ConstructEntity(Construction::new(
+                            action_type,
                             tick,
-                            command.index,
+                            index,
                             blueprint,
                             Position::new(position[0], position[1], position[2]),
                             Position::new(snapped[0], snapped[1], snapped[2]),
@@ -315,7 +469,7 @@ impl Command {
                     }
                     _ => panic!(
                         "a construction command isn't being handled here! command type {:?}",
-                        command.action_type
+                        action_type
                     ),
                 }
             }
@@ -326,26 +480,26 @@ impl Command {
                      Replay::camera_tracks and Replay::camera_counts"
                 )
             }
-            ticks::CommandData::ResourceBonus(entries) => match command.action_type {
+            ticks::CommandData::ResourceBonus(entries) => match action_type {
                 CommandType::PCMD_AIPlayer_ResourceBonus => Self::AIResourceBonus(
-                    ResourceBonus::new(tick, command.index, entries.into_iter().collect()),
+                    ResourceBonus::new(action_type, tick, index, entries.into_iter().collect()),
                 ),
                 _ => panic!(
                     "a resource bonus command isn't being handled here! command type {:?}",
-                    command.action_type
+                    action_type
                 ),
             },
-            ticks::CommandData::BroadcastMessage(json) => match command.action_type {
+            ticks::CommandData::BroadcastMessage(json) => match action_type {
                 CommandType::PCMD_BroadcastMessage => {
-                    Self::Broadcast(BroadcastMessage::new(tick, command.index, json))
+                    Self::Broadcast(BroadcastMessage::new(action_type, tick, index, json))
                 }
                 _ => panic!(
                     "a broadcast message command isn't being handled here! command type {:?}",
-                    command.action_type
+                    action_type
                 ),
             },
             ticks::CommandData::Unknown => {
-                Self::Unknown(Unknown::new(tick, command.index, command.action_type))
+                Self::Unknown(Unknown::new(action_type, tick, index))
             }
         }
     }
