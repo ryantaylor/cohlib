@@ -3,8 +3,11 @@
 //! Exposes the CohLib module with classes for replay parsing, build order
 //! extraction, and versioned game data access.
 
+mod camera;
+mod command;
+
 use cohlib::{
-    extract_build_order, parse_replay, BuildAction, BuildActionKind, BuildOrder, MapPoint,
+    extract_build_order, parse_replay, BuildAction, BuildActionKind, BuildOrder, Command, MapPoint,
     MapSize, Message, Player, Replay, Semver, StartingPosition, VersionedStore,
 };
 use magnus::{function, method, prelude::*, Error, RArray, RHash, Ruby};
@@ -81,6 +84,26 @@ fn player_starting_position(rb_self: &Player) -> Option<StartingPosition> {
     rb_self.starting_position().cloned()
 }
 
+fn wrap_commands(ruby: &Ruby, commands: Vec<Command>) -> RArray {
+    let arr = ruby.ary_new_capa(commands.len());
+    for command in commands {
+        arr.push(ruby.obj_wrap(command)).unwrap();
+    }
+    arr
+}
+
+fn player_commands(ruby: &Ruby, rb_self: &Player) -> RArray {
+    wrap_commands(ruby, rb_self.commands())
+}
+
+fn player_build_commands(ruby: &Ruby, rb_self: &Player) -> RArray {
+    wrap_commands(ruby, rb_self.build_commands())
+}
+
+fn player_battlegroup_commands(ruby: &Ruby, rb_self: &Player) -> RArray {
+    wrap_commands(ruby, rb_self.battlegroup_commands())
+}
+
 // ---------------------------------------------------------------------------
 // CohLib::Message
 // ---------------------------------------------------------------------------
@@ -88,7 +111,8 @@ fn player_starting_position(rb_self: &Player) -> Option<StartingPosition> {
 fn message_to_h(ruby: &Ruby, rb_self: &Message) -> RHash {
     let hash = ruby.hash_new();
     hash.aset(ruby.to_symbol("tick"), rb_self.tick()).unwrap();
-    hash.aset(ruby.to_symbol("message"), rb_self.message()).unwrap();
+    hash.aset(ruby.to_symbol("message"), rb_self.message())
+        .unwrap();
     hash
 }
 
@@ -138,10 +162,14 @@ fn build_action_action_type(rb_self: &BuildAction) -> String {
 fn build_action_to_h(ruby: &Ruby, rb_self: &BuildAction) -> RHash {
     let hash = ruby.hash_new();
     hash.aset(ruby.to_symbol("tick"), rb_self.tick).unwrap();
-    hash.aset(ruby.to_symbol("action_type"), build_action_action_type(rb_self))
-        .unwrap();
+    hash.aset(
+        ruby.to_symbol("action_type"),
+        build_action_action_type(rb_self),
+    )
+    .unwrap();
     hash.aset(ruby.to_symbol("pbgid"), rb_self.pbgid).unwrap();
-    hash.aset(ruby.to_symbol("suspect_since"), rb_self.suspect_since).unwrap();
+    hash.aset(ruby.to_symbol("suspect_since"), rb_self.suspect_since)
+        .unwrap();
     hash.aset(ruby.to_symbol("cancelled"), rb_self.cancelled)
         .unwrap();
     hash
@@ -180,7 +208,9 @@ fn versioned_store_extract_build_order(
 }
 
 fn versioned_store_t(rb_self: &VersionedStore, build: u32, pbgid: u32) -> Option<String> {
-    rb_self.local_name_for_formatted(pbgid, build).map(|s| s.to_owned())
+    rb_self
+        .local_name_for_formatted(pbgid, build)
+        .map(|s| s.to_owned())
 }
 
 fn versioned_store_localize(rb_self: &VersionedStore, loc_id: u32, build: u32) -> Option<String> {
@@ -209,7 +239,11 @@ fn versioned_store_map_size(
         .map(|size| map_size_to_array(ruby, size))
 }
 
-fn versioned_store_checksums_for(ruby: &Ruby, rb_self: &VersionedStore, build: u32) -> Option<RHash> {
+fn versioned_store_checksums_for(
+    ruby: &Ruby,
+    rb_self: &VersionedStore,
+    build: u32,
+) -> Option<RHash> {
     rb_self.checksums_for(build).map(|(dc, abc)| {
         let h = ruby.hash_new();
         h.aset(ruby.to_symbol("data_checksum"), dc).unwrap();
@@ -289,6 +323,23 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     player_class.define_method("profile_id", method!(Player::profile_id, 0))?;
     player_class.define_method("messages", method!(player_messages, 0))?;
     player_class.define_method("starting_position", method!(player_starting_position, 0))?;
+    player_class.define_method("commands", method!(player_commands, 0))?;
+    player_class.define_method("build_commands", method!(player_build_commands, 0))?;
+    player_class.define_method(
+        "battlegroup_commands",
+        method!(player_battlegroup_commands, 0),
+    )?;
+    player_class.define_method("camera_tracks", method!(camera::tracks, 0))?;
+    player_class.define_method("camera_counts", method!(camera::counts, 0))?;
+
+    // CohLib::Command
+    let command_class = module.define_class("Command", ruby.class_object())?;
+    command_class.define_method("tick", method!(Command::tick, 0))?;
+    command_class.define_method("index", method!(Command::index, 0))?;
+    command_class.define_method("type", method!(command::variant_name, 0))?;
+    command_class.define_method("action_type", method!(command::action_type, 0))?;
+    command_class.define_method("pbgid", method!(Command::pbgid, 0))?;
+    command_class.define_method("to_h", method!(command::to_h, 0))?;
 
     // CohLib::Message
     let message_class = module.define_class("Message", ruby.class_object())?;
@@ -318,7 +369,10 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     build_action_class.define_method("index", method!(|a: &BuildAction| a.index, 0))?;
     build_action_class.define_method("action_type", method!(build_action_action_type, 0))?;
     build_action_class.define_method("pbgid", method!(|a: &BuildAction| a.pbgid, 0))?;
-    build_action_class.define_method("suspect_since", method!(|a: &BuildAction| a.suspect_since, 0))?;
+    build_action_class.define_method(
+        "suspect_since",
+        method!(|a: &BuildAction| a.suspect_since, 0),
+    )?;
     build_action_class.define_method("cancelled", method!(|a: &BuildAction| a.cancelled, 0))?;
     build_action_class.define_method("to_h", method!(build_action_to_h, 0))?;
 

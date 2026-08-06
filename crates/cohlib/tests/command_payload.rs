@@ -430,3 +430,243 @@ fn camera_track_sequence_is_monotonic_per_player() {
         }
     }
 }
+
+/// The wire types each variant is allowed to have been decoded from. Three variants
+/// deliberately merge several wire types (see `Command::StopAbility`,
+/// `Command::UnloadSquads`, `Command::CancelProduction`); this is the guard that the
+/// originating type is plumbed through faithfully rather than being replaced by a
+/// canonical one, since the merged types are the whole reason `action_type` is stored
+/// on the payload instead of derived from the variant. `Command::Unknown` is excluded —
+/// by construction it covers whichever wire types this crate hasn't decoded, so there's
+/// no fixed set to check it against.
+const VARIANT_WIRE_TYPES: &[(&str, &[CommandType])] = &[
+    ("AITakeover", &[CommandType::PCMD_AIPlayer]),
+    (
+        "AIResourceBonus",
+        &[CommandType::PCMD_AIPlayer_ResourceBonus],
+    ),
+    ("Attack", &[CommandType::SCMD_Attack]),
+    ("AttackMove", &[CommandType::SCMD_AttackMove]),
+    ("AttackFromHold", &[CommandType::CMD_AttackFromHold]),
+    ("Broadcast", &[CommandType::PCMD_BroadcastMessage]),
+    ("BuildStructure", &[CommandType::SCMD_BuildStructure]),
+    ("BuildGlobalUpgrade", &[CommandType::CMD_Upgrade]),
+    ("BuildSquad", &[CommandType::CMD_BuildSquad]),
+    ("CancelConstruction", &[CommandType::CMD_CancelConstruction]),
+    (
+        "CancelProduction",
+        &[
+            CommandType::CMD_CancelProduction,
+            CommandType::SCMD_CancelProduction,
+            CommandType::PCMD_CancelProduction,
+        ],
+    ),
+    ("Capture", &[CommandType::SCMD_Capture]),
+    ("CaptureTeamWeapon", &[CommandType::SCMD_CaptureTeamWeapon]),
+    (
+        "ConstructEntity",
+        &[CommandType::PCMD_PlaceAndConstructEntities],
+    ),
+    (
+        "DeselectAllBattlegroupAbilities",
+        &[CommandType::PCMD_TentativeUpgradeRemoveAll],
+    ),
+    ("DetonateCharges", &[CommandType::PCMD_DetonateCharges]),
+    ("Face", &[CommandType::SCMD_Face]),
+    ("Load", &[CommandType::SCMD_Load]),
+    ("Move", &[CommandType::CMD_Move]),
+    ("MoveSquad", &[CommandType::SCMD_Move]),
+    ("PickUpSimItem", &[CommandType::SCMD_PickUpSimItem]),
+    ("Recrew", &[CommandType::SCMD_Recrew]),
+    ("Reinforce", &[CommandType::SCMD_ReinforceUnit]),
+    ("Retreat", &[CommandType::SCMD_Retreat]),
+    ("RallyPoint", &[CommandType::CMD_RallyPoint]),
+    ("SelectBattlegroup", &[CommandType::PCMD_InstantUpgrade]),
+    (
+        "SelectBattlegroupAbility",
+        &[CommandType::PCMD_TentativeUpgrade],
+    ),
+    ("Stop", &[CommandType::SCMD_Stop]),
+    (
+        "StopAbility",
+        &[CommandType::SCMD_StopAbility, CommandType::CMD_StopAbility],
+    ),
+    ("Surrender", &[CommandType::PCMD_Surrender]),
+    ("Unload", &[CommandType::SCMD_Unload]),
+    (
+        "UnloadSquads",
+        &[
+            CommandType::SCMD_UnloadSquads,
+            CommandType::CMD_UnloadSquads,
+        ],
+    ),
+    ("UpgradeSquad", &[CommandType::SCMD_Upgrade]),
+    ("UseAbility", &[CommandType::CMD_Ability]),
+    ("UseAbilitySquad", &[CommandType::SCMD_Ability]),
+    ("UseBattlegroupAbility", &[CommandType::PCMD_Ability]),
+];
+
+/// Variants whose payload legitimately merges more than one wire type — see
+/// `VARIANT_WIRE_TYPES`.
+const MERGED_VARIANTS: &[&str] = &["StopAbility", "UnloadSquads", "CancelProduction"];
+
+#[test]
+fn every_command_action_type_matches_its_variant() {
+    for path in fixture_paths() {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let replay = parse_fixture(&path);
+        for player in replay.players() {
+            for command in player.commands() {
+                if matches!(command, Command::Unknown(_)) {
+                    continue;
+                }
+                let variant = command.variant_name();
+                let (_, allowed) = VARIANT_WIRE_TYPES
+                    .iter()
+                    .find(|(v, _)| *v == variant)
+                    .unwrap_or_else(|| panic!("{name}: no VARIANT_WIRE_TYPES entry for {variant}"));
+                assert!(
+                    allowed.contains(&command.action_type()),
+                    "{name}: {variant} decoded from unexpected wire type {:?}",
+                    command.action_type()
+                );
+            }
+        }
+    }
+}
+
+/// Without this, `every_command_action_type_matches_its_variant` would pass just as
+/// happily against a canonical-per-variant table (one that dropped the alternate wire
+/// types from `VARIANT_WIRE_TYPES`) — it wouldn't be guarding the faithfulness of
+/// `action_type` at all. This proves the merged variants really are observed carrying
+/// more than one wire type in the corpus.
+#[test]
+fn merged_variants_are_observed_with_multiple_wire_types() {
+    let mut seen: HashMap<&str, std::collections::HashSet<CommandType>> = MERGED_VARIANTS
+        .iter()
+        .map(|&v| (v, std::collections::HashSet::new()))
+        .collect();
+
+    for path in fixture_paths() {
+        let replay = parse_fixture(&path);
+        for player in replay.players() {
+            for command in player.commands() {
+                let variant = command.variant_name();
+                if let Some(set) = seen.get_mut(variant) {
+                    set.insert(command.action_type());
+                }
+            }
+        }
+    }
+
+    for variant in MERGED_VARIANTS {
+        let set = &seen[variant];
+        assert!(
+            set.len() > 1,
+            "expected {variant} to be observed with more than one wire type in the \
+             corpus, got {set:?} — this test isn't guarding anything if it isn't"
+        );
+    }
+}
+
+/// `Source::kind()`/`ids()` are the flattening the Ruby bindings persist; the pair must
+/// stay consistent with the source variant and never yield an empty id list.
+#[test]
+fn source_kind_and_ids_agree_with_the_variant() {
+    let mut checked = 0;
+    for path in fixture_paths() {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let replay = parse_fixture(&path);
+        for player in replay.players() {
+            for command in player.commands() {
+                let Some(source) = command.source() else {
+                    continue;
+                };
+                let ids = source.ids();
+                assert!(
+                    !ids.is_empty(),
+                    "{name}: {} source has empty ids for kind {}",
+                    command.variant_name(),
+                    source.kind()
+                );
+                if !matches!(source, Source::Squads(_)) {
+                    assert_eq!(
+                        ids.len(),
+                        1,
+                        "{name}: scalar source kind {} should have exactly one id",
+                        source.kind()
+                    );
+                }
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 0, "expected at least one command with a source");
+}
+
+/// Records which variants the fixture corpus actually reaches, so gaps in Ruby-side
+/// `to_h` coverage are visible rather than assumed. Every non-`Unknown` variant is
+/// currently reachable; this fails if a previously-reachable variant regresses (e.g. a
+/// parse change that silently falls back to `Unknown` for a shape that used to decode),
+/// and reports the missing set so it's clear what broke.
+#[test]
+fn corpus_variant_coverage_does_not_regress() {
+    const EXPECTED_REACHABLE: &[&str] = &[
+        "AITakeover",
+        "AIResourceBonus",
+        "Attack",
+        "AttackMove",
+        "AttackFromHold",
+        "Broadcast",
+        "BuildStructure",
+        "BuildGlobalUpgrade",
+        "BuildSquad",
+        "CancelConstruction",
+        "CancelProduction",
+        "Capture",
+        "CaptureTeamWeapon",
+        "ConstructEntity",
+        "DeselectAllBattlegroupAbilities",
+        "DetonateCharges",
+        "Face",
+        "Load",
+        "Move",
+        "MoveSquad",
+        "PickUpSimItem",
+        "Recrew",
+        "Reinforce",
+        "Retreat",
+        "RallyPoint",
+        "SelectBattlegroup",
+        "SelectBattlegroupAbility",
+        "Stop",
+        "StopAbility",
+        "Surrender",
+        "Unload",
+        "UnloadSquads",
+        "UpgradeSquad",
+        "UseAbility",
+        "UseAbilitySquad",
+        "UseBattlegroupAbility",
+    ];
+
+    let mut reached: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+    for path in fixture_paths() {
+        let replay = parse_fixture(&path);
+        for player in replay.players() {
+            for command in player.commands() {
+                reached.insert(command.variant_name());
+            }
+        }
+    }
+
+    let missing: Vec<_> = EXPECTED_REACHABLE
+        .iter()
+        .filter(|v| !reached.contains(*v))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "expected these variants to be reachable in the fixture corpus, but they \
+         weren't: {missing:?} (reached: {reached:?})"
+    );
+}

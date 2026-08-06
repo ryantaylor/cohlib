@@ -1,3 +1,4 @@
+use crate::command_type::CommandType;
 use serde::{Deserialize, Serialize};
 
 /// `PCMD_BroadcastMessage`'s payload: a UTF-8 JSON message describing a UI/scripted
@@ -8,16 +9,26 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BroadcastMessage {
+    action_type: CommandType,
     tick: u32,
     index: u32,
     json: String,
 }
 
 impl BroadcastMessage {
-    pub(crate) fn new(tick: u32, index: u32, json: String) -> Self {
-        Self { tick, index, json }
+    pub(crate) fn new(action_type: CommandType, tick: u32, index: u32, json: String) -> Self {
+        Self {
+            action_type,
+            tick,
+            index,
+            json,
+        }
     }
 
+    /// The Relic wire command type this command was decoded from.
+    pub fn action_type(&self) -> CommandType {
+        self.action_type
+    }
     /// This value is the tick at which the command was found while parsing the replay, which
     /// represents the time in the replay at which it was executed. Because CoH3's engine runs at 8
     /// ticks per second, you can divide this value by 8 to get the number of seconds since the

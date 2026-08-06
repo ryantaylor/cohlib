@@ -1,6 +1,7 @@
 use crate::data::{ParserResult, Span};
 use nom::{combinator::map, number::complete::le_u8};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Company of Heroes 3 command types.
 
@@ -184,6 +185,29 @@ pub enum CommandType {
 impl CommandType {
     pub(crate) fn parse(input: Span) -> ParserResult<CommandType> {
         map(le_u8, CommandType::from)(input)
+    }
+
+    /// The raw wire byte for this command type.
+    pub fn id(self) -> u8 {
+        u8::from(self)
+    }
+}
+
+impl fmt::Display for CommandType {
+    /// Every mapped variant's identifier is the verbatim Relic wire name (that's what
+    /// the `non_camel_case_types` allow on the enum is for), so the derived `Debug`
+    /// output *is* the wire name — deriving the string this way keeps 159 names from
+    /// drifting out of a hand-maintained fourth copy of the variant list (the enum
+    /// body, `From<u8>` and `From<CommandType> for u8` are already three). Do not
+    /// replace `{mapped:?}` with a match table: `command_type_names_are_stable` in
+    /// `crates/cohlib/tests/command_type_names.rs` pins the full output so a rename, or
+    /// a change in how `Debug` formats this enum, fails a test instead of silently
+    /// changing a string that downstream consumers persist.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unknown(value) => write!(f, "UNKNOWN_{value}"),
+            mapped => write!(f, "{mapped:?}"),
+        }
     }
 }
 
