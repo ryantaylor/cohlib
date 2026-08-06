@@ -215,7 +215,12 @@ impl<'a> Factory<'a> {
     fn classify_use_battlegroup_ability(&mut self, tick: u32, index: u32, pbgid: u32) -> bool {
         if let Some(ability) = self.store.get_ability(pbgid, self.version) {
             if ability.autobuild || ability.builds.is_some() {
-                return self.push_battlegroup(tick, index, pbgid, BuildActionKind::ConstructBuilding);
+                return self.push_battlegroup(
+                    tick,
+                    index,
+                    pbgid,
+                    BuildActionKind::ConstructBuilding,
+                );
             } else if !ability.spawns.is_empty() {
                 return self.push_battlegroup(tick, index, pbgid, BuildActionKind::TrainUnit);
             } else if !ability.upgrades.is_empty() {
@@ -578,7 +583,9 @@ mod tests {
                 icon_name: String::new(),
                 autobuild: false,
                 builds: None,
-                spawns: vec!["ai/ai_ability_intents/spawns/air_and_sea_commandos_ability_intent".into()],
+                spawns: vec![
+                    "ai/ai_ability_intents/spawns/air_and_sea_commandos_ability_intent".into(),
+                ],
                 upgrades: vec![],
                 screen_name_formatter: None,
             },

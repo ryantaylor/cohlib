@@ -196,7 +196,10 @@ impl GameData {
 /// (e.g. `data:scenarios\multiplayer\wadi_darnah_4p\wadi_darnah_4p` →
 /// `scenarios/multiplayer/wadi_darnah_4p/wadi_darnah_4p`).
 fn normalize_scenario(scenario: &str) -> String {
-    scenario.strip_prefix("data:").unwrap_or(scenario).replace('\\', "/")
+    scenario
+        .strip_prefix("data:")
+        .unwrap_or(scenario)
+        .replace('\\', "/")
 }
 
 /// Version-aware entity store that holds multiple game versions and resolves lookups
@@ -432,9 +435,18 @@ impl VersionedStore {
     pub fn icon_for(&self, pbgid: u32, build: Version) -> Option<&str> {
         self.get_iconable_entity(pbgid, build)
             .map(|e| e.icon_name.as_str())
-            .or_else(|| self.get_iconable_squad(pbgid, build).map(|s| s.icon_name.as_str()))
-            .or_else(|| self.get_iconable_upgrade(pbgid, build).map(|u| u.icon_name.as_str()))
-            .or_else(|| self.get_iconable_ability(pbgid, build).map(|a| a.icon_name.as_str()))
+            .or_else(|| {
+                self.get_iconable_squad(pbgid, build)
+                    .map(|s| s.icon_name.as_str())
+            })
+            .or_else(|| {
+                self.get_iconable_upgrade(pbgid, build)
+                    .map(|u| u.icon_name.as_str())
+            })
+            .or_else(|| {
+                self.get_iconable_ability(pbgid, build)
+                    .map(|a| a.icon_name.as_str())
+            })
     }
 
     /// Returns the `screen_name_formatter` for an upgrade at `build`, cloned to
@@ -569,12 +581,12 @@ impl Default for VersionedStore {
 /// A named game entity with its pbgid and the build-order action type used to produce it.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct BuildEntry {
-    pub pbgid:       u32,
-    pub name:        String,
+    pub pbgid: u32,
+    pub name: String,
     pub action_type: String,
     /// Slash-joined attribute path, e.g. `upgrade_tables/americans/squad_upgrades/grenade_package`.
     /// Useful for distinguishing same-named entities across factions.
-    pub path:        String,
+    pub path: String,
 }
 
 impl VersionedStore {
@@ -597,21 +609,37 @@ impl VersionedStore {
         for (&pbgid, squad) in &latest.squads {
             if let Some(name) = self.local_name_for(pbgid, build) {
                 let path = squad.path.join("/");
-                entries.push(BuildEntry { pbgid, name: name.to_owned(), action_type: "TrainUnit".to_owned(), path });
+                entries.push(BuildEntry {
+                    pbgid,
+                    name: name.to_owned(),
+                    action_type: "TrainUnit".to_owned(),
+                    path,
+                });
             }
         }
         for (&pbgid, entity) in &latest.entities {
             if let Some(name) = self.local_name_for(pbgid, build) {
                 let path = entity.path.join("/");
-                entries.push(BuildEntry { pbgid, name: name.to_owned(), action_type: "ConstructBuilding".to_owned(), path });
+                entries.push(BuildEntry {
+                    pbgid,
+                    name: name.to_owned(),
+                    action_type: "ConstructBuilding".to_owned(),
+                    path,
+                });
             }
         }
         for (&pbgid, upgrade) in &latest.upgrades {
-            if let Some(name) = self.local_name_for_formatted(pbgid, build)
+            if let Some(name) = self
+                .local_name_for_formatted(pbgid, build)
                 .or_else(|| self.local_name_for(pbgid, build).map(str::to_owned))
             {
                 let path = upgrade.path.join("/");
-                entries.push(BuildEntry { pbgid, name, action_type: "ResearchUpgrade".to_owned(), path });
+                entries.push(BuildEntry {
+                    pbgid,
+                    name,
+                    action_type: "ResearchUpgrade".to_owned(),
+                    path,
+                });
             }
         }
         // Construction abilities (autobuild or explicit `builds` target) appear in replay
@@ -621,19 +649,29 @@ impl VersionedStore {
         // Abilities may not be present in the latest version's data (they can be absent from
         // newer patches while still appearing in replays). Collect pbgids across ALL versions
         // and use version-fallback resolution so nothing gets missed.
-        let ability_pbgids: std::collections::HashSet<u32> = self.versions.iter()
+        let ability_pbgids: std::collections::HashSet<u32> = self
+            .versions
+            .iter()
             .flat_map(|gd| gd.abilities.keys().copied())
             .collect();
         for pbgid in ability_pbgids {
-            let Some(ability) = self.get_ability(pbgid, build) else { continue };
+            let Some(ability) = self.get_ability(pbgid, build) else {
+                continue;
+            };
             if ability.builds.is_none() {
                 continue;
             }
-            if let Some(name) = self.local_name_for_formatted(pbgid, build)
+            if let Some(name) = self
+                .local_name_for_formatted(pbgid, build)
                 .or_else(|| self.local_name_for(pbgid, build).map(str::to_owned))
             {
                 let path = ability.path.join("/");
-                entries.push(BuildEntry { pbgid, name, action_type: "ConstructBuilding".to_owned(), path });
+                entries.push(BuildEntry {
+                    pbgid,
+                    name,
+                    action_type: "ConstructBuilding".to_owned(),
+                    path,
+                });
             }
         }
 
@@ -1050,7 +1088,10 @@ mod tests {
         let store = VersionedStore::bundled();
         // Version 44736 should have read game data (panzergrenadier squad entity)
         assert!(store.local_name_for_formatted(188642, 44736).is_some());
-        assert_eq!(store.local_name_for_formatted(188642, 44736).unwrap(), "Panzergrenadier Squad");
+        assert_eq!(
+            store.local_name_for_formatted(188642, 44736).unwrap(),
+            "Panzergrenadier Squad"
+        );
     }
 
     #[test]
@@ -1058,6 +1099,9 @@ mod tests {
         let store = VersionedStore::bundled();
         // Version 44736 should have read game data (panzergrenadier squad entity)
         assert!(store.local_name_for(188642, 44736).is_some());
-        assert_eq!(store.local_name_for(188642, 44736).unwrap(), "Panzergrenadier Squad");
+        assert_eq!(
+            store.local_name_for(188642, 44736).unwrap(),
+            "Panzergrenadier Squad"
+        );
     }
 }

@@ -18,8 +18,18 @@ use std::path::{Path, PathBuf};
 /// Selector order hardcoded in `RelicCoH3.exe` at static VA `0x148333870`.
 /// Drives the iteration order in the dataChecksum hashing pass.
 const SELECTOR_ORDER: &[&str] = &[
-    "attrib", "audio", "data", "data", "locale", "movies", "reflect",
-    "telemetry", "scardocs", "thumbnail", "toolsdata", "data",
+    "attrib",
+    "audio",
+    "data",
+    "data",
+    "locale",
+    "movies",
+    "reflect",
+    "telemetry",
+    "scardocs",
+    "thumbnail",
+    "toolsdata",
+    "data",
 ];
 
 /// Returns the signed `i32` `dataChecksum` for the game depot at `game_dir`.
@@ -163,15 +173,17 @@ fn resolve_sga(game_dir: &Path, root: &str, name: &str) -> Result<PathBuf, Strin
 
 /// Compute the `(archive_id, archive_version)` pair for a single SGA file.
 ///
-/// - `archive_id`:      MD5 of the UTF-16LE internal name at file offset `0x0C`
-///                      (up to the first null-pair), formatted in MS-GUID byte order.
+/// - `archive_id`: MD5 of the UTF-16LE internal name at file offset `0x0C`
+///   (up to the first null-pair), formatted in MS-GUID byte order.
 /// - `archive_version`: MD5 of all file bytes from the TOC offset (`u32_le` at `0x8C`)
-///                      to EOF, formatted in MS-GUID byte order.
+///   to EOF, formatted in MS-GUID byte order.
 fn compute_archive_id_version(path: &Path) -> Result<(String, String), String> {
-    let data =
-        std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
     if data.len() < 0x90 {
-        return Err(format!("{}: file too short to be a valid SGA", path.display()));
+        return Err(format!(
+            "{}: file too short to be a valid SGA",
+            path.display()
+        ));
     }
 
     // Internal name: UTF-16LE starting at 0x0C, terminated by a \x00\x00 pair.
@@ -185,7 +197,10 @@ fn compute_archive_id_version(path: &Path) -> Result<(String, String), String> {
     // TOC offset stored as u32 LE at 0x8C.
     let toc = u32::from_le_bytes(data[0x8C..0x90].try_into().unwrap()) as usize;
     if toc > data.len() {
-        return Err(format!("{}: TOC offset 0x{toc:X} is out of bounds", path.display()));
+        return Err(format!(
+            "{}: TOC offset 0x{toc:X} is out of bounds",
+            path.display()
+        ));
     }
     let ver = ms_guid_hex(md5::Md5::digest(&data[toc..]).as_ref());
 
@@ -202,10 +217,22 @@ fn ms_guid_hex(raw: &[u8]) -> String {
          {:02x}{:02x}\
          {:02x}{:02x}\
          {:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        raw[3], raw[2], raw[1], raw[0],
-        raw[5], raw[4],
-        raw[7], raw[6],
-        raw[8], raw[9], raw[10], raw[11], raw[12], raw[13], raw[14], raw[15],
+        raw[3],
+        raw[2],
+        raw[1],
+        raw[0],
+        raw[5],
+        raw[4],
+        raw[7],
+        raw[6],
+        raw[8],
+        raw[9],
+        raw[10],
+        raw[11],
+        raw[12],
+        raw[13],
+        raw[14],
+        raw[15],
     )
 }
 
@@ -220,8 +247,8 @@ mod tests {
         // in MS-GUID byte order.
         let raw: [u8; 16] = [
             0x89, 0x86, 0x65, 0xcc, // Data1 bytes (stored LE, reversed to cc658689)
-            0x32, 0xe8,             // Data2 bytes (reversed to e832)
-            0xa2, 0x7a,             // Data3 bytes (reversed to 7aa2)
+            0x32, 0xe8, // Data2 bytes (reversed to e832)
+            0xa2, 0x7a, // Data3 bytes (reversed to 7aa2)
             0x13, 0xf0, 0x47, 0xca, 0x59, 0x8e, 0xe0, 0xc9, // Data4 sequential
         ];
         assert_eq!(ms_guid_hex(&raw), "cc658689e8327aa213f047ca598ee0c9");
@@ -257,11 +284,17 @@ archive.02 = UI
 
         let attrib = &sections["attrib"];
         assert_eq!(attrib.len(), 1);
-        assert_eq!(attrib[0], ("anvil\\archives".to_string(), "Attrib".to_string()));
+        assert_eq!(
+            attrib[0],
+            ("anvil\\archives".to_string(), "Attrib".to_string())
+        );
 
         let data = &sections["data"];
         assert_eq!(data.len(), 2);
-        assert_eq!(data[0], ("engine\\archives".to_string(), "Data".to_string()));
+        assert_eq!(
+            data[0],
+            ("engine\\archives".to_string(), "Data".to_string())
+        );
         assert_eq!(data[1], ("engine\\archives".to_string(), "UI".to_string()));
     }
 }

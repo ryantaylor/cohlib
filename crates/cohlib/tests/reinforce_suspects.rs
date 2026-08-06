@@ -14,7 +14,7 @@
 //! The lookup tries ability → squad → upgrade in order; pbgids are unique across
 //! all three tables so the first hit is always correct.
 
-use cohlib::{extract_build_order, BuildActionKind, BuildAction, VersionedStore};
+use cohlib::{extract_build_order, BuildAction, BuildActionKind, VersionedStore};
 use data::Version;
 
 fn store() -> VersionedStore {
@@ -28,8 +28,16 @@ fn action_path(action: &BuildAction, version: Version, store: &VersionedStore) -
     store
         .get_ability(action.pbgid, version)
         .map(|a| a.path.join("/"))
-        .or_else(|| store.get_squad(action.pbgid, version).map(|s| s.path.join("/")))
-        .or_else(|| store.get_upgrade(action.pbgid, version).map(|u| u.path.join("/")))
+        .or_else(|| {
+            store
+                .get_squad(action.pbgid, version)
+                .map(|s| s.path.join("/"))
+        })
+        .or_else(|| {
+            store
+                .get_upgrade(action.pbgid, version)
+                .map(|u| u.path.join("/"))
+        })
         .unwrap_or_default()
 }
 
