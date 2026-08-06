@@ -7,6 +7,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 mod checksums;
 mod images;
+mod scenarios;
 mod semver;
 
 fn spinner_style() -> ProgressStyle {
@@ -144,7 +145,8 @@ fn parse_populate_args(args: &[String]) -> (Vec<PathBuf>, PathBuf) {
 ///
 /// Usage: cohlib import <depot_path> [--version <build_number>] --output <data_dir>
 fn cmd_import(args: &[String]) {
-    let (depot_path, version, output_dir, images_config) = parse_import_args(args);
+    let (depot_path, version, output_dir, images_config, scenarios_sga_path) =
+        parse_import_args(args);
 
     let attrib_sga = depot_path
         .join("anvil")
@@ -242,6 +244,21 @@ fn cmd_import(args: &[String]) {
         }
     }
 
+    if scenarios_sga_path.exists() {
+        match scenarios::extract_map_sizes(&scenarios_sga_path) {
+            Ok(sizes) => {
+                eprintln!("Scenario dimensions: {} scenarios", sizes.len());
+                gd.scenarios = sizes;
+            }
+            Err(e) => eprintln!("warning: scenario dimension extraction failed: {e}"),
+        }
+    } else {
+        eprintln!(
+            "ScenariosMP.sga not found at {}, skipping scenario dimensions",
+            scenarios_sga_path.display()
+        );
+    }
+
     let version_str = version.to_string();
     let out_version_dir = output_dir.join(&version_str);
     let out_path = out_version_dir.join("game_data.json");
@@ -308,7 +325,9 @@ fn read_exe_version(exe_path: &Path) -> Result<u32, String> {
     Ok(product_version_ls >> 16)
 }
 
-fn parse_import_args(args: &[String]) -> (PathBuf, u32, PathBuf, Option<images::ImagesConfig>) {
+fn parse_import_args(
+    args: &[String],
+) -> (PathBuf, u32, PathBuf, Option<images::ImagesConfig>, PathBuf) {
     let mut depot_path = None;
     let mut version = None;
     let mut output_dir = None;
@@ -373,18 +392,22 @@ fn parse_import_args(args: &[String]) -> (PathBuf, u32, PathBuf, Option<images::
         eprintln!("--output <data_dir> is required");
         process::exit(1);
     });
+    // Resolved unconditionally (not just under --images): scenario dimensions are
+    // extracted from the same archive on every import, regardless of whether image
+    // extraction was requested.
+    let scenarios_sga_path = scenarios_sga.unwrap_or_else(|| {
+        depot_path
+            .join("anvil")
+            .join("archives")
+            .join("ScenariosMP.sga")
+    });
     let images_config = images_dir.map(|dir| images::ImagesConfig {
         icons_sga: icons_sga
             .unwrap_or_else(|| depot_path.join("anvil").join("archives").join("UI.sga")),
-        scenarios_sga: Some(scenarios_sga.unwrap_or_else(|| {
-            depot_path
-                .join("anvil")
-                .join("archives")
-                .join("ScenariosMP.sga")
-        })),
+        scenarios_sga: Some(scenarios_sga_path.clone()),
         images_dir: dir,
     });
-    (depot_path, version, output_dir, images_config)
+    (depot_path, version, output_dir, images_config, scenarios_sga_path)
 }
 
 /// Re-serialize all game_data.json files in a data directory through the current

@@ -145,6 +145,17 @@ impl std::fmt::Display for Semver {
     }
 }
 
+/// World-space dimensions of a multiplayer scenario, as declared in its `.info`
+/// file (`HeaderInfo.mapsize`). Not present in replay data — only available from
+/// imported game data. Used to project in-replay world coordinates (starting
+/// positions, territory/victory points) onto a minimap image: pixel fraction is
+/// simply `coordinate / (size / 2) / 2 + 0.5` in each axis.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MapSize {
+    pub width: f32,
+    pub height: f32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameData {
     pub version: Version,
@@ -157,6 +168,10 @@ pub struct GameData {
     pub data_checksum: Option<i32>,
     #[serde(default)]
     pub semver: Option<Semver>,
+    /// Keyed by normalized scenario path (`scenarios/multiplayer/.../<name>`, no
+    /// `data:` prefix, forward slashes) — see [`normalize_scenario`].
+    #[serde(default)]
+    pub scenarios: BTreeMap<String, MapSize>,
 }
 
 impl GameData {
@@ -170,8 +185,18 @@ impl GameData {
             locale: LocaleStore(BTreeMap::new()),
             data_checksum: None,
             semver: None,
+            scenarios: BTreeMap::new(),
         }
     }
+}
+
+/// Normalizes a scenario identifier for `GameData::scenarios` lookups: strips the
+/// leading `data:` prefix used by replay files and converts backslashes to
+/// forward slashes, matching the path form derived from scenario `.info` files
+/// (e.g. `data:scenarios\multiplayer\wadi_darnah_4p\wadi_darnah_4p` →
+/// `scenarios/multiplayer/wadi_darnah_4p/wadi_darnah_4p`).
+fn normalize_scenario(scenario: &str) -> String {
+    scenario.strip_prefix("data:").unwrap_or(scenario).replace('\\', "/")
 }
 
 /// Version-aware entity store that holds multiple game versions and resolves lookups
@@ -307,6 +332,18 @@ impl VersionedStore {
     /// Returns the localized string for `loc_id` at `build`, with version fallback.
     pub fn localize(&self, loc_id: u32, build: Version) -> Option<&str> {
         self.resolve(build, |gd| gd.locale.get(loc_id))
+    }
+
+    /// Returns the [`MapSize`] for `scenario` at `build`, with version fallback.
+    ///
+    /// `scenario` accepts either raw replay form (`data:scenarios\...`) or the
+    /// normalized forward-slash form — see [`normalize_scenario`]. Only scenarios
+    /// re-imported since this field was added carry a value, so builds before that
+    /// fall through to the nearest version (older or newer) that does — maps are
+    /// rarely resized between patches, so this is normally the correct answer.
+    pub fn get_map_size(&self, scenario: &str, build: Version) -> Option<&MapSize> {
+        let key = normalize_scenario(scenario);
+        self.resolve(build, |gd| gd.scenarios.get(&key))
     }
 
     /// Returns the localized string name for `pbgid` at `build`, with version fallback,

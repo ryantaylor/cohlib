@@ -4,8 +4,8 @@
 //! extraction, and versioned game data access.
 
 use cohlib::{
-    extract_build_order, parse_replay, BuildAction, BuildActionKind, BuildOrder, MapPoint, Message,
-    Player, Replay, Semver, StartingPosition, VersionedStore,
+    extract_build_order, parse_replay, BuildAction, BuildActionKind, BuildOrder, MapPoint,
+    MapSize, Message, Player, Replay, Semver, StartingPosition, VersionedStore,
 };
 use magnus::{function, method, prelude::*, Error, RArray, RHash, Ruby};
 
@@ -191,6 +191,24 @@ fn versioned_store_icon_for(rb_self: &VersionedStore, pbgid: u32, build: u32) ->
     rb_self.icon_for(pbgid, build).map(|s| s.to_owned())
 }
 
+fn map_size_to_array(ruby: &Ruby, size: &MapSize) -> RArray {
+    let arr = ruby.ary_new();
+    arr.push(size.width).unwrap();
+    arr.push(size.height).unwrap();
+    arr
+}
+
+fn versioned_store_map_size(
+    ruby: &Ruby,
+    rb_self: &VersionedStore,
+    scenario: String,
+    build: u32,
+) -> Option<RArray> {
+    rb_self
+        .get_map_size(&scenario, build)
+        .map(|size| map_size_to_array(ruby, size))
+}
+
 fn versioned_store_checksums_for(ruby: &Ruby, rb_self: &VersionedStore, build: u32) -> Option<RHash> {
     rb_self.checksums_for(build).map(|(dc, abc)| {
         let h = ruby.hash_new();
@@ -318,6 +336,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     store_class.define_method("t", method!(versioned_store_t, 2))?;
     store_class.define_method("localize", method!(versioned_store_localize, 2))?;
     store_class.define_method("icon_for", method!(versioned_store_icon_for, 2))?;
+    store_class.define_method("map_size", method!(versioned_store_map_size, 2))?;
     store_class.define_method("checksums_for", method!(versioned_store_checksums_for, 1))?;
     store_class.define_method("semver_for", method!(versioned_store_semver_for, 1))?;
     store_class.define_method(
