@@ -5,7 +5,7 @@ use crate::data::{ParserResult, Span};
 use nom::bytes::complete::take;
 use nom::combinator::{cond, cut, map};
 use nom::multi::length_count;
-use nom::number::complete::{le_u32, le_u64, le_u8};
+use nom::number::complete::{le_u16, le_u32, le_u64, le_u8};
 use nom::sequence::tuple;
 use nom::IResult;
 use nom_tracable::tracable_parser;
@@ -59,8 +59,10 @@ impl Player {
 
             let (input, items) = Self::parse_items(input, &player)?;
 
-            // players in this chunk version or later have an extra 4 bytes between them for some reason
-            let (input, _) = cond(header.version >= 4595383, take(4u32))(input)?;
+            // players in this chunk version or later are followed by a count-prefixed list of
+            // 6-byte records (seen non-empty for AI-filled slots); usually empty, in which case
+            // this is just the 4-byte zero count.
+            let (input, _) = cond(header.version >= 4595383, Self::parse_trailer)(input)?;
 
             Ok((
                 input,
@@ -95,6 +97,11 @@ impl Player {
     fn parse_steam_id(input: Span) -> ParserResult<String> {
         let (input, (_, steam_id)) = parse_utf16_variable(le_u32)(input)?;
         Ok((input, steam_id))
+    }
+
+    #[tracable_parser]
+    fn parse_trailer(input: Span) -> ParserResult<()> {
+        map(length_count(le_u32, tuple((le_u32, le_u16))), |_| ())(input)
     }
 
     fn item_parser_for(player: &Player) -> impl FnMut(Span) -> ParserResult<Item> {
