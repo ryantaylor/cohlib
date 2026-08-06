@@ -128,6 +128,7 @@ impl Replay {
 fn replay_from_data(data: &ReplayData) -> Replay {
     let commands = data.commands();
     let camera_tracks = data.camera_tracks();
+    let camera_counts = data.camera_counts();
     let messages = data.messages();
     let map = map_from_data(data.map_data());
     let starting_positions = map.starting_positions().to_vec();
@@ -149,6 +150,7 @@ fn replay_from_data(data: &ReplayData) -> Replay {
                     &messages,
                     &commands,
                     &camera_tracks,
+                    &camera_counts,
                     &starting_positions,
                 )
             })

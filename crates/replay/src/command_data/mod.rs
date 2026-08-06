@@ -2,6 +2,7 @@
 
 mod ability;
 mod broadcast_message;
+mod camera_counts;
 mod camera_track;
 mod construction;
 mod empty;
@@ -19,6 +20,7 @@ mod unknown;
 
 pub use crate::command_data::ability::Ability;
 pub use crate::command_data::broadcast_message::BroadcastMessage;
+pub use crate::command_data::camera_counts::CameraCounts;
 pub use crate::command_data::camera_track::CameraTrack;
 pub use crate::command_data::construction::Construction;
 pub use crate::command_data::empty::Empty;

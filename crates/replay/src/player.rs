@@ -1,7 +1,7 @@
 //! Representation of parsed player information.
 
 use crate::command::Command;
-use crate::command_data::CameraTrack;
+use crate::command_data::{CameraCounts, CameraTrack};
 use crate::data::Player as PlayerData;
 use crate::map::StartingPosition;
 use crate::message::Message;
@@ -29,6 +29,7 @@ pub struct Player {
     messages: Vec<Message>,
     commands: Vec<Command>,
     camera_tracks: Vec<CameraTrack>,
+    camera_counts: Vec<CameraCounts>,
     starting_position: Option<StartingPosition>,
 }
 
@@ -96,6 +97,13 @@ impl Player {
         self.camera_tracks.clone()
     }
 
+    /// Per-player camera diagnostic counters recorded throughout the match. Not
+    /// player-issued commands — see [`CameraCounts`] — so kept separate from
+    /// [`Self::commands`].
+    pub fn camera_counts(&self) -> Vec<CameraCounts> {
+        self.camera_counts.clone()
+    }
+
     /// A list of only build-related commands executed by the player in the match. A build command
     /// is any that enqueues the construction of a new unit or upgrade. Sorted chronologically from
     /// first to last.
@@ -138,11 +146,13 @@ impl Player {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn player_from_data(
     player_data: &PlayerData,
     messages: &HashMap<String, Vec<Message>>,
     commands: &HashMap<u32, Vec<Command>>,
     camera_tracks: &HashMap<u32, Vec<CameraTrack>>,
+    camera_counts: &HashMap<u32, Vec<CameraCounts>>,
     starting_positions: &[StartingPosition],
 ) -> Player {
     let mut player = Player {
@@ -155,6 +165,10 @@ pub(crate) fn player_from_data(
         messages: messages.get(&player_data.name).cloned().unwrap_or_default(),
         commands: commands.get(&player_data.id).cloned().unwrap_or_default(),
         camera_tracks: camera_tracks
+            .get(&player_data.id)
+            .cloned()
+            .unwrap_or_default(),
+        camera_counts: camera_counts
             .get(&player_data.id)
             .cloned()
             .unwrap_or_default(),

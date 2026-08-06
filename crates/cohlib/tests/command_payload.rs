@@ -224,13 +224,15 @@ fn cancel_construction_decodes_a_multi_squad_source() {
     );
 }
 
-/// Camera track records (`DCMD_CameraTrack`/`DCMD_COUNT`) are not player commands: they
-/// must never appear in `Player::commands()` (as `Command::Unknown` or otherwise), and
-/// `Player::camera_tracks()` must actually be populated from the same underlying data.
+/// Camera telemetry records (`DCMD_CameraTrack`/`DCMD_COUNT`) are not player commands:
+/// they must never appear in `Player::commands()` (as `Command::Unknown` or otherwise),
+/// and `Player::camera_tracks()`/`Player::camera_counts()` must actually be populated
+/// from the same underlying data.
 #[test]
 fn camera_tracks_are_excluded_from_commands_and_populated_separately() {
     let mut total_commands = 0;
     let mut total_camera_tracks = 0;
+    let mut total_camera_counts = 0;
 
     for path in fixture_paths() {
         let name = path.file_name().unwrap().to_string_lossy().to_string();
@@ -249,6 +251,7 @@ fn camera_tracks_are_excluded_from_commands_and_populated_separately() {
                 }
             }
             total_camera_tracks += player.camera_tracks().len();
+            total_camera_counts += player.camera_counts().len();
         }
     }
 
@@ -257,4 +260,173 @@ fn camera_tracks_are_excluded_from_commands_and_populated_separately() {
         total_camera_tracks > 0,
         "expected at least one camera track"
     );
+    assert!(
+        total_camera_counts > 0,
+        "expected at least one camera counts record"
+    );
+}
+
+/// `CameraTrack::position` is exactly `raw_position() / 100` — this crate doesn't
+/// attempt to reconstruct coordinates beyond the wire format's ±327.67 unit range (see
+/// the type's docs on why). Checked corpus-wide, including the largest maps, since
+/// every fixture examined during development stays within that range regardless of map
+/// size.
+#[test]
+fn camera_track_position_is_raw_position_scaled() {
+    let mut checked = 0;
+    for path in fixture_paths() {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let replay = parse_fixture(&path);
+        for player in replay.players() {
+            for track in player.camera_tracks() {
+                let raw = track.raw_position();
+                let expected = [
+                    raw[0] as f32 / 100.0,
+                    raw[1] as f32 / 100.0,
+                    raw[2] as f32 / 100.0,
+                ];
+                let resolved = track.position();
+                assert_eq!(
+                    [resolved.x(), resolved.y(), resolved.z()],
+                    expected,
+                    "{name}: expected position() to be raw_position() scaled by 1/100"
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 0, "expected at least one camera track");
+}
+
+/// `startpos_8p.rec` has a known-good `StartingPosition` for every one of its 8 players
+/// (see `parse_starting_positions_8p` in `replay.rs`), which doubles as ground truth for
+/// `CameraTrack::position`: every player's very first camera sample should be centred on
+/// their starting position, since that's where the match camera begins. `x` should match
+/// almost exactly; `z` (see `CameraTrack::position` on the axis convention) is offset by
+/// a small, constant amount — the camera sits slightly behind the point it's centred on.
+#[test]
+fn camera_track_position_matches_known_starting_positions() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("replays")
+        .join("startpos_8p.rec");
+    let replay = parse_fixture(&path);
+
+    let mut z_offsets = Vec::new();
+    for player in replay.players() {
+        let starting_position = player
+            .starting_position()
+            .unwrap_or_else(|| panic!("{}: expected a starting position", player.name()));
+        let first = player
+            .camera_tracks()
+            .into_iter()
+            .min_by_key(|track| track.tick())
+            .unwrap_or_else(|| panic!("{}: expected at least one camera track", player.name()));
+
+        let dx = (first.position().x() - starting_position.x()).abs();
+        assert!(
+            dx < 0.05,
+            "{}: camera x {} too far from starting position x {}",
+            player.name(),
+            first.position().x(),
+            starting_position.x()
+        );
+        z_offsets.push(starting_position.y() - first.position().z());
+    }
+
+    let min = z_offsets.iter().cloned().fold(f32::INFINITY, f32::min);
+    let max = z_offsets.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    assert!(
+        max - min < 0.1,
+        "expected the camera's z offset from the starting position to be the same \
+         constant for every player, got offsets {z_offsets:?}"
+    );
+}
+
+/// The camera's orientation is a unit quaternion, and the game's fixed RTS camera never
+/// banks — so it should always be roll-free, i.e. `w*z == -x*y` (see
+/// `CameraTrack::pitch`/`yaw`, which assume this).
+#[test]
+fn camera_track_orientation_is_a_roll_free_unit_quaternion() {
+    for path in fixture_paths() {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let replay = parse_fixture(&path);
+        for player in replay.players() {
+            for track in player.camera_tracks() {
+                let [w, x, y, z] = track.orientation();
+                let norm = (w * w + x * x + y * y + z * z).sqrt();
+                assert!(
+                    (norm - 1.0).abs() < 0.01,
+                    "{name}: camera orientation {:?} isn't a unit quaternion (norm {norm})",
+                    track.orientation()
+                );
+                assert!(
+                    (w * z - (-x * y)).abs() < 0.01,
+                    "{name}: camera orientation {:?} isn't roll-free",
+                    track.orientation()
+                );
+            }
+        }
+    }
+}
+
+/// Large single-step jumps in camera position are common and legitimate — e.g. a player
+/// clicking the minimap teleports the camera there instantly — and every fixture's raw
+/// camera coordinates stay within the wire format's ±327.67 unit range regardless (see
+/// `CameraTrack::position`), so `unusual_options.rec`'s large apparent jumps are real
+/// camera movement, not a wraparound artifact to correct.
+#[test]
+fn camera_track_large_jumps_are_real_movement_not_wraparound() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("replays")
+        .join("unusual_options.rec");
+    let replay = parse_fixture(&path);
+
+    let mut large_jumps = 0;
+    for player in replay.players() {
+        for track in player.camera_tracks() {
+            let raw = track.raw_position();
+            assert!(
+                (-32768..=32767).contains(&raw[0]) && (-32768..=32767).contains(&raw[2]),
+                "raw position should always be in i16 range by construction"
+            );
+        }
+        let mut tracks = player.camera_tracks();
+        tracks.sort_by_key(|track| track.tick());
+        for pair in tracks.windows(2) {
+            let [a, b] = pair else { unreachable!() };
+            if (a.position().x() - b.position().x()).abs() > 500.0 {
+                large_jumps += 1;
+            }
+        }
+    }
+
+    assert!(
+        large_jumps > 100,
+        "expected this fixture to demonstrate large single-step camera movement, found {large_jumps}"
+    );
+}
+
+/// `CameraTrack::sequence` is a per-player sample counter distinct from `tick` (the
+/// position in the replay's overall tick stream) — it should increase monotonically
+/// within a player's own samples even though it isn't derivable from `tick` (see the
+/// type's docs).
+#[test]
+fn camera_track_sequence_is_monotonic_per_player() {
+    for path in fixture_paths() {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let replay = parse_fixture(&path);
+        for player in replay.players() {
+            let mut tracks = player.camera_tracks();
+            tracks.sort_by_key(|track| track.tick());
+            for pair in tracks.windows(2) {
+                let [a, b] = pair else { unreachable!() };
+                assert!(
+                    a.sequence() <= b.sequence(),
+                    "{name}: expected non-decreasing sequence, got {} then {}",
+                    a.sequence(),
+                    b.sequence()
+                );
+            }
+        }
+    }
 }

@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-/// A 3D orientation. The wire format encodes this as four `f32`s; the values observed
-/// (a unit-length-like `x, y, z, w` tuple) strongly suggest a quaternion, but this
-/// hasn't been confirmed against an authoritative source.
+/// A 3D orientation, as carried by a command's targeting parameters (e.g. "face this
+/// direction"). The wire format encodes this as four `f32`s; despite the name, this
+/// isn't a quaternion — `w` is exactly `1.0` in every occurrence examined during
+/// development, while `x, y, z` form a unit vector — so it's a plain direction with a
+/// constant trailing component, not a rotation. Contrast with the camera's orientation
+/// (`CameraTrack::orientation`), which is a real quaternion with a varying `w`.
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Orientation {

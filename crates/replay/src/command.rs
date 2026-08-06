@@ -319,10 +319,13 @@ impl Command {
                     ),
                 }
             }
-            ticks::CommandData::CameraTrack(_) => panic!(
-                "camera track commands are not player commands and should have been \
-                 filtered out before reaching Command conversion — see Replay::camera_tracks"
-            ),
+            ticks::CommandData::CameraTrack { .. } | ticks::CommandData::CameraCounts { .. } => {
+                panic!(
+                    "camera commands are not player commands and should have been \
+                     filtered out before reaching Command conversion — see \
+                     Replay::camera_tracks and Replay::camera_counts"
+                )
+            }
             ticks::CommandData::ResourceBonus(entries) => match command.action_type {
                 CommandType::PCMD_AIPlayer_ResourceBonus => Self::AIResourceBonus(
                     ResourceBonus::new(tick, command.index, entries.into_iter().collect()),
