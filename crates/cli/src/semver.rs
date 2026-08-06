@@ -33,20 +33,24 @@ use std::path::Path;
 
 /// Reads `exe_path` and derives the marketing `Semver { major, minor, patch }`.
 pub fn derive_semver(exe_path: &Path) -> Result<Semver, String> {
-    let buf = std::fs::read(exe_path)
-        .map_err(|e| format!("cannot read {}: {e}", exe_path.display()))?;
+    let buf =
+        std::fs::read(exe_path).map_err(|e| format!("cannot read {}: {e}", exe_path.display()))?;
     derive_from_bytes(&buf)
 }
 
 fn derive_from_bytes(buf: &[u8]) -> Result<Semver, String> {
     let (image_base, sections) = parse_pe_sections(buf)?;
     let fmt_rva = find_format_string_rva(buf, &sections)?;
-    let text = find_section(&sections, ".text")
-        .ok_or_else(|| ".text section not found".to_string())?;
+    let text =
+        find_section(&sections, ".text").ok_or_else(|| ".text section not found".to_string())?;
 
     let (site_off, major, minor) = find_marketing_swprintf(buf, text, image_base, fmt_rva)?;
     let patch = find_patch_immediate(buf, text, site_off)?;
-    Ok(Semver { major, minor, patch })
+    Ok(Semver {
+        major,
+        minor,
+        patch,
+    })
 }
 
 struct Section {
@@ -65,8 +69,7 @@ fn parse_pe_sections(buf: &[u8]) -> Result<(u64, Vec<Section>), String> {
         return Err("PE header offset out of range".into());
     }
     let num_sec = u16::from_le_bytes(buf[pe_off + 6..pe_off + 8].try_into().unwrap()) as usize;
-    let opt_size =
-        u16::from_le_bytes(buf[pe_off + 20..pe_off + 22].try_into().unwrap()) as usize;
+    let opt_size = u16::from_le_bytes(buf[pe_off + 20..pe_off + 22].try_into().unwrap()) as usize;
     let opt_base = pe_off + 24;
     if opt_base + 32 > buf.len() {
         return Err("optional header truncated".into());
@@ -80,10 +83,8 @@ fn parse_pe_sections(buf: &[u8]) -> Result<(u64, Vec<Section>), String> {
         if b + 40 > buf.len() {
             return Err("section table truncated".into());
         }
-        let name = String::from_utf8_lossy(
-            buf[b..b + 8].split(|&c| c == 0).next().unwrap_or(&[]),
-        )
-        .into_owned();
+        let name = String::from_utf8_lossy(buf[b..b + 8].split(|&c| c == 0).next().unwrap_or(&[]))
+            .into_owned();
         let va = u32::from_le_bytes(buf[b + 12..b + 16].try_into().unwrap());
         let rs = u32::from_le_bytes(buf[b + 16..b + 20].try_into().unwrap());
         let ro = u32::from_le_bytes(buf[b + 20..b + 24].try_into().unwrap());
@@ -97,8 +98,8 @@ fn find_section<'a>(sections: &'a [Section], name: &str) -> Option<&'a Section> 
 }
 
 fn find_format_string_rva(buf: &[u8], sections: &[Section]) -> Result<u32, String> {
-    let rdata = find_section(sections, ".rdata")
-        .ok_or_else(|| ".rdata section not found".to_string())?;
+    let rdata =
+        find_section(sections, ".rdata").ok_or_else(|| ".rdata section not found".to_string())?;
     // UTF-16LE "%d.%d.%d.%d\0"
     let needle: Vec<u8> = "%d.%d.%d.%d\0"
         .encode_utf16()
@@ -159,8 +160,7 @@ fn find_marketing_swprintf(
             let major = buf[i + 8];
             let disp32 = i32::from_le_bytes(buf[i + 15..i + 19].try_into().unwrap());
             let lea_file_off = i + 12;
-            let lea_instr_va =
-                image_base + text.va as u64 + (lea_file_off - text_ro) as u64;
+            let lea_instr_va = image_base + text.va as u64 + (lea_file_off - text_ro) as u64;
             let lea_target = (lea_instr_va as i64) + 7 + disp32 as i64;
             let target_rva = lea_target - image_base as i64;
             if target_rva == fmt_rva as i64 {
@@ -266,10 +266,22 @@ fn decode_rsp20_store_reg(rex: u8, modrm: u8) -> Option<u8> {
 
 fn reg_name(reg: u8) -> &'static str {
     match reg {
-        0 => "eax", 1 => "ecx", 2 => "edx", 3 => "ebx",
-        4 => "esp", 5 => "ebp", 6 => "esi", 7 => "edi",
-        8 => "r8d", 9 => "r9d", 10 => "r10d", 11 => "r11d",
-        12 => "r12d", 13 => "r13d", 14 => "r14d", 15 => "r15d",
+        0 => "eax",
+        1 => "ecx",
+        2 => "edx",
+        3 => "ebx",
+        4 => "esp",
+        5 => "ebp",
+        6 => "esi",
+        7 => "edi",
+        8 => "r8d",
+        9 => "r9d",
+        10 => "r10d",
+        11 => "r11d",
+        12 => "r12d",
+        13 => "r13d",
+        14 => "r14d",
+        15 => "r15d",
         _ => "?",
     }
 }
@@ -279,7 +291,12 @@ fn match_reg_assignment(buf: &[u8], j: usize, reg: u8) -> Option<u8> {
     if reg < 8 {
         // No REX prefix needed for low 8 regs.
         // mov reg32, imm32: B8+reg ii ii ii ii (5 bytes)
-        if j + 4 < buf.len() && buf[j] == 0xB8 + reg && buf[j + 2] == 0 && buf[j + 3] == 0 && buf[j + 4] == 0 {
+        if j + 4 < buf.len()
+            && buf[j] == 0xB8 + reg
+            && buf[j + 2] == 0
+            && buf[j + 3] == 0
+            && buf[j + 4] == 0
+        {
             return Some(buf[j + 1]);
         }
         // xor reg32, reg32: 33 (mod=11, reg=reg, rm=reg) — modrm = 0xC0 | reg<<3 | reg
