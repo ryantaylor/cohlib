@@ -525,6 +525,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a local cohdata checkout at /Users/ryantaylor/cohdata"]
     fn test_parse_abilities() {
         let path = data_dir().join("abilities.json");
         let text = std::fs::read_to_string(&path).expect("abilities.json not found");
@@ -556,6 +557,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a local cohdata checkout at /Users/ryantaylor/cohdata"]
     fn test_parse_ebps() {
         let path = data_dir().join("ebps.json");
         let text = std::fs::read_to_string(&path).expect("ebps.json not found");
@@ -590,6 +592,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a local cohdata checkout at /Users/ryantaylor/cohdata"]
     fn test_parse_sbps() {
         let path = data_dir().join("sbps.json");
         let text = std::fs::read_to_string(&path).expect("sbps.json not found");
@@ -613,6 +616,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a local cohdata checkout at /Users/ryantaylor/cohdata"]
     fn test_parse_upgrades() {
         let path = data_dir().join("upgrade.json");
         let text = std::fs::read_to_string(&path).expect("upgrade.json not found");
@@ -639,6 +643,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a local cohdata checkout at /Users/ryantaylor/cohdata"]
     fn test_parse_locale_txt() {
         let path = data_dir().join("locale.txt");
         let text = std::fs::read_to_string(&path).expect("locale.txt not found");
@@ -658,6 +663,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a local cohdata checkout at /Users/ryantaylor/cohdata"]
     fn test_import_version_round_trip() {
         let dir = data_dir();
         let game_data = import_version(&dir, 10612).expect("import_version failed");
@@ -751,6 +757,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a local cohdata checkout at /Users/ryantaylor/cohdata"]
     fn test_parse_upgrades_with_formatter() {
         // The sherman e8 battlegroup unlock first appears in v24421.
         let path = PathBuf::from("/Users/ryantaylor/cohdata/data/24421/upgrade.json");
@@ -785,6 +792,7 @@ mod tests {
     ///                          arg     11241678  → "M4A3E8 Sherman Easy Eight"
     ///   expected: "Unlock M4A3E8 Sherman Easy Eight Production"
     #[test]
+    #[ignore = "requires a local cohdata checkout at /Users/ryantaylor/cohdata"]
     fn local_name_for_formatted_applies_formatter_end_to_end() {
         let dir = PathBuf::from("/Users/ryantaylor/cohdata/data/24421");
         let game_data = import_version(&dir, 24421).expect("import_version failed");
