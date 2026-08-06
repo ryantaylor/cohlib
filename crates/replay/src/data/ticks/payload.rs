@@ -42,8 +42,9 @@ pub(crate) fn parse_header(input: Span) -> ParserResult<Span> {
 /// alongside the other public command payload shapes).
 impl Source {
     /// Parses a source field. Scalar sources (player/entity/squad) are a tag byte
-    /// followed by a big-endian 24-bit id; list sources (tag `0x41..=0x7F`, count in
-    /// the low 6 bits) are a tag byte followed by that many little-endian `u32`
+    /// followed by a big-endian 24-bit id; list sources (tag `0x40..=0x7F`, count in
+    /// the low 6 bits, `0x40` meaning an empty list — seen on the sourceless DCMD
+    /// camera commands) are a tag byte followed by that many little-endian `u32`
     /// entries, each independently encoding `(tag << 24) | id`. Panics on an
     /// unrecognized tag — see module docs on why unexpected input panics rather than
     /// degrading to `Unknown`.
@@ -54,7 +55,7 @@ impl Source {
             0x00 => map(be_u32, |v| Source::Player((v & 0xFF) as u8))(input),
             0x10 => map(be_u32, |v| Source::Entity(v & 0x00FF_FFFF))(input),
             0x20 => map(be_u32, |v| Source::Squad(v & 0x00FF_FFFF))(input),
-            t if (0x41..=0x7F).contains(&t) => map(
+            t if (0x40..=0x7F).contains(&t) => map(
                 tuple((le_u8, count(le_u32, (t & 0x3F) as usize))),
                 |(_, entries)| {
                     Source::Squads(entries.into_iter().map(|v| v & 0x00FF_FFFF).collect())

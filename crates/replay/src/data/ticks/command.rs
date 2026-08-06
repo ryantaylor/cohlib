@@ -6,16 +6,20 @@ use crate::{
     data::{ParserResult, Span},
 };
 use nom::{
-    bytes::complete::{tag, take},
+    bytes::complete::take,
     combinator::{flat_map, map, peek, rest},
     multi::{length_count, length_data, length_value},
-    number::complete::{be_u32, le_f32, le_u16, le_u32, le_u8},
+    number::complete::{be_u32, le_f32, le_i16, le_u16, le_u32, le_u8},
     sequence::{preceded, tuple},
 };
 use nom_tracable::tracable_parser;
 
 /// The three positions and spawned entity ids parsed by [`CommandData::parse_construction`].
 type ConstructionFields = (([f32; 3], [f32; 3], [f32; 3]), Vec<u32>);
+
+/// The sequence, eye position and orientation fields parsed by
+/// [`CommandData::parse_camera_track`].
+type CameraTrackFields = (u32, i16, i16, i16, i16, i16, i16, i16);
 
 #[derive(Debug, Clone)]
 pub enum CommandData {
@@ -46,10 +50,21 @@ pub enum CommandData {
     /// `PCMD_PlaceAndConstructEntities`'s payload: a blueprint, three raw
     /// (non-tag-prefixed) positions, and the spawned entity ids.
     Construction(Blueprint, [f32; 3], [f32; 3], [f32; 3], Vec<u32>),
-    /// `DCMD_CameraTrack`/`DCMD_COUNT`'s payload: everything after the 5-byte `0xFF`
-    /// marker, captured verbatim. Unlike every other command type, these have no
-    /// header or source field at all — see [`CommandData::parse_camera_track`].
-    CameraTrack(Vec<u8>),
+    /// `DCMD_CameraTrack`'s payload (parameter block kind `0x2f`): a sample sequence,
+    /// the camera's eye position, and its orientation — still in their raw fixed-point
+    /// wire encoding, scaled (but not otherwise reinterpreted) into
+    /// [`crate::command_data::CameraTrack`] further up.
+    CameraTrack {
+        sequence: u32,
+        position: [i16; 3],
+        orientation: [i16; 4],
+    },
+    /// `DCMD_COUNT`'s payload (parameter block kind `0x30`): a sample sequence and
+    /// three not-fully-understood entity counters — see [`crate::command_data::CameraCounts`].
+    CameraCounts {
+        sequence: u32,
+        counts: [u16; 3],
+    },
     /// `PCMD_AIPlayer_ResourceBonus`'s payload: a count-prefixed map from
     /// length-prefixed resource name to `f32` multiplier.
     ResourceBonus(Vec<(String, f32)>),
@@ -242,15 +257,62 @@ impl CommandData {
         )(input)
     }
 
-    /// `DCMD_CameraTrack`/`DCMD_COUNT` payload: a fixed 5-byte `0xFF` marker — unlike
-    /// every other command type, no header or source field precedes it — followed by
-    /// not-yet-decoded telemetry bytes captured verbatim. Panics if the marker isn't
-    /// present, since that would mean this payload isn't the validated DCMD shape at
-    /// all.
+    /// `DCMD_CameraTrack`'s payload: header, sourceless (empty squad-list) source,
+    /// then a parameter block (kind `0x2f`) holding a sample sequence, the camera's
+    /// eye position, and its orientation, each still raw fixed-point. Panics if the
+    /// block isn't kind `0x2f` or doesn't fit this shape.
     pub fn parse_camera_track(input: Span) -> ParserResult<CommandData> {
         map(
-            preceded(tag([0xffu8, 0xff, 0xff, 0xff, 0xff].as_slice()), rest),
-            |data: Span| CommandData::CameraTrack(data.fragment().to_vec()),
+            tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
+            |(_, _source, block)| {
+                let block = expect_block(block);
+                if block.kind != 0x2f {
+                    panic!(
+                        "expected a camera track parameter block (kind 0x2f), found kind 0x{:02x}",
+                        block.kind
+                    );
+                }
+                let mut fields = tuple((
+                    le_u32, le_i16, le_i16, le_i16, le_i16, le_i16, le_i16, le_i16,
+                ));
+                let result: ParserResult<CameraTrackFields> = fields(block.data);
+                match result {
+                    Ok((_, (sequence, x, alt, z, w, qx, qy, qz))) => CommandData::CameraTrack {
+                        sequence,
+                        position: [x, alt, z],
+                        orientation: [w, qx, qy, qz],
+                    },
+                    Err(e) => panic!("failed to parse camera track data: {e:?}"),
+                }
+            },
+        )(input)
+    }
+
+    /// `DCMD_COUNT`'s payload: header, sourceless source, then a parameter block
+    /// (kind `0x30`) holding a sample sequence and three entity counters — see
+    /// [`crate::command_data::CameraCounts`] on why their exact meaning is unconfirmed.
+    /// Panics if the block isn't kind `0x30` or doesn't fit this shape.
+    pub fn parse_camera_counts(input: Span) -> ParserResult<CommandData> {
+        map(
+            tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
+            |(_, _source, block)| {
+                let block = expect_block(block);
+                if block.kind != 0x30 {
+                    panic!(
+                        "expected a camera counts parameter block (kind 0x30), found kind 0x{:02x}",
+                        block.kind
+                    );
+                }
+                let mut fields = tuple((le_u32, le_u16, le_u16, le_u16));
+                let result: ParserResult<(u32, u16, u16, u16)> = fields(block.data);
+                match result {
+                    Ok((_, (sequence, a, b, c))) => CommandData::CameraCounts {
+                        sequence,
+                        counts: [a, b, c],
+                    },
+                    Err(e) => panic!("failed to parse camera counts data: {e:?}"),
+                }
+            },
         )(input)
     }
 
@@ -343,7 +405,8 @@ impl CommandData {
             | CommandType::SCMD_BuildStructure
             | CommandType::SCMD_Recrew
             | CommandType::PCMD_DetonateCharges => Self::parse_targeted,
-            CommandType::DCMD_CameraTrack | CommandType::DCMD_COUNT => Self::parse_camera_track,
+            CommandType::DCMD_CameraTrack => Self::parse_camera_track,
+            CommandType::DCMD_COUNT => Self::parse_camera_counts,
             CommandType::PCMD_AIPlayer_ResourceBonus => Self::parse_resource_bonus,
             CommandType::PCMD_BroadcastMessage => Self::parse_broadcast_message,
             _ => Self::parse_unknown,
