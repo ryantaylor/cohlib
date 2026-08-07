@@ -142,6 +142,19 @@ pub fn extract_game_data(
         })
         .collect();
 
+    // Build lookups from normalized path → resource income / capture timing for all
+    // parsed entities that have their own resource_ext / strategic_point_ext fields.
+    // Territory point shape variants (`_smaller`, `_rect15x20`, ...) only set
+    // parent_pbg, so these are walked via parent_pbg_map like icons and loc_ids.
+    let parent_resources: HashMap<String, data::ResourceIncome> = raws
+        .iter()
+        .filter_map(|raw| Some((raw.path.join("/"), parse_resource(&raw.fields)?)))
+        .collect();
+    let parent_captures: HashMap<String, data::CaptureInfo> = raws
+        .iter()
+        .filter_map(|raw| Some((raw.path.join("/"), parse_capture(&raw.fields)?)))
+        .collect();
+
     for raw in raws {
         on_entry();
 
@@ -182,6 +195,10 @@ pub fn extract_game_data(
                 let icon_name = resolve_icon(&raw.fields, &parent_icons, &parent_pbg_map);
                 let spawns: Vec<String> = raw.spawns.iter().map(|s| normalize_sep(s)).collect();
                 let upgrades: Vec<String> = raw.upgrades.iter().map(|s| normalize_sep(s)).collect();
+                let resource = parse_resource(&raw.fields)
+                    .or_else(|| resolve_parent(&raw.fields, &parent_resources, &parent_pbg_map));
+                let capture = parse_capture(&raw.fields)
+                    .or_else(|| resolve_parent(&raw.fields, &parent_captures, &parent_pbg_map));
                 game_data.entities.insert(
                     raw.pbgid,
                     Entity {
@@ -191,6 +208,8 @@ pub fn extract_game_data(
                         icon_name,
                         spawns,
                         upgrades,
+                        resource,
+                        capture,
                     },
                 );
             }
@@ -284,6 +303,54 @@ fn resolve_loc_id(
     0
 }
 
+/// Parses a `resource_ext` block's captured fields into a [`data::ResourceIncome`].
+/// Returns `None` if this entity has no `resource_ext` of its own (shape variants
+/// that only set `parent_pbg`, and victory points, which provide no resource).
+fn parse_resource(fields: &HashMap<String, String>) -> Option<data::ResourceIncome> {
+    let kind_str = fields.get("default_provided_resource")?;
+    let kind = match kind_str.as_str() {
+        "fuel" => data::ResourceKind::Fuel,
+        // The XML uses the singular "munition"; see ResourceKind's doc comment.
+        "munition" => data::ResourceKind::Munitions,
+        "manpower" => data::ResourceKind::Manpower,
+        _ => return None,
+    };
+    let per_second = fields
+        .get(&format!("resource_per_second:{kind_str}"))?
+        .parse::<f32>()
+        .ok()?;
+    Some(data::ResourceIncome { kind, per_second })
+}
+
+/// Parses a `strategic_point_ext` block's captured fields into a [`data::CaptureInfo`].
+/// Returns `None` unless both `capture_time` and `revert_time` were captured.
+fn parse_capture(fields: &HashMap<String, String>) -> Option<data::CaptureInfo> {
+    let capture_time = fields.get("capture_time")?.parse::<f32>().ok()?;
+    let revert_time = fields.get("revert_time")?.parse::<f32>().ok()?;
+    Some(data::CaptureInfo {
+        capture_time,
+        revert_time,
+    })
+}
+
+/// Walks the `parent_pbg` chain looking up `T` in `parent_values`, for `Copy` fields
+/// (like [`data::ResourceIncome`]/[`data::CaptureInfo`]) that don't have their own
+/// value and must inherit one from an ancestor — mirrors [`resolve_icon`]/[`resolve_loc_id`].
+fn resolve_parent<T: Copy>(
+    fields: &HashMap<String, String>,
+    parent_values: &HashMap<String, T>,
+    parent_pbg_map: &HashMap<String, String>,
+) -> Option<T> {
+    let mut current = fields.get("parent_pbg").map(|p| normalize_sep(p));
+    while let Some(path) = current {
+        if let Some(&value) = parent_values.get(&path) {
+            return Some(value);
+        }
+        current = parent_pbg_map.get(&path).cloned();
+    }
+    None
+}
+
 /// Parses a loc_id from an optional string value (may have "$" prefix or be "0").
 fn parse_loc_str(s: Option<&String>) -> u32 {
     s.map(|v| v.trim_start_matches('$'))
@@ -331,6 +398,11 @@ enum Ctx {
     ScreenNameFormatter,
     /// Inside `<list name="formatter_arguments">` within a `ScreenNameFormatter`.
     FormatterArguments,
+    /// Inside `<template_reference name="exts" value="ebpextensions\resource_ext">`.
+    ResourceExt,
+    /// Inside `<enum_table name="resource_provided_per_second">` within a [`Ctx::ResourceExt`].
+    /// Distinct from the sibling `total_amount_of_resources` table, which is ignored.
+    ResourcePerSecond,
     Other,
 }
 
@@ -397,6 +469,14 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
                             _ => ctx_stack.push(Ctx::Other),
                         }
                     }
+                    "enum_table" => {
+                        let name = get_attr(e, b"name").unwrap_or_default();
+                        if name == "resource_provided_per_second" {
+                            ctx_stack.push(Ctx::ResourcePerSecond);
+                        } else {
+                            ctx_stack.push(Ctx::Other);
+                        }
+                    }
                     "group" => {
                         let name = get_attr(e, b"name").unwrap_or_default();
                         if name == "techtree_bag" {
@@ -416,6 +496,8 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
                         let value = get_attr(e, b"value").unwrap_or_default();
                         if name == "screen_name_formatter" && !value.is_empty() {
                             ctx_stack.push(Ctx::ScreenNameFormatter);
+                        } else if value.contains("resource_ext") {
+                            ctx_stack.push(Ctx::ResourceExt);
                         } else if value.contains("requirement") {
                             ctx_stack.push(Ctx::Requirement);
                         } else if (name == "ability_extensions" || name == "exts")
@@ -592,6 +674,28 @@ fn parse_xml(bytes: &[u8]) -> Result<ParseXmlResult, Error> {
                                         fields.entry(name).or_insert(value);
                                     }
                                 }
+                            }
+                        }
+                    }
+                    "enum" => {
+                        if let (Some(name), Some(value)) =
+                            (get_attr(e, b"name"), get_attr(e, b"value"))
+                        {
+                            if name == "default_provided_resource" && !value.is_empty() {
+                                fields.entry(name).or_insert(value);
+                            }
+                        }
+                    }
+                    "float" => {
+                        if let (Some(name), Some(value)) =
+                            (get_attr(e, b"name"), get_attr(e, b"value"))
+                        {
+                            if current_ctx == Some(&Ctx::ResourcePerSecond) {
+                                fields
+                                    .entry(format!("resource_per_second:{name}"))
+                                    .or_insert(value);
+                            } else if name == "capture_time" || name == "revert_time" {
+                                fields.entry(name).or_insert(value);
                             }
                         }
                     }
@@ -1033,6 +1137,124 @@ mod tests {
         assert!(e
             .spawns
             .contains(&"sbps/races/american/infantry/riflemen_us".to_string()));
+    }
+
+    // ---------------------------------------------------------------------------
+    // resource_ext / strategic_point_ext tests
+    // ---------------------------------------------------------------------------
+
+    const TERRITORY_STRATEGIC_POINT_XML: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
+<instance version="5" description="" template="ebps">
+  <variant name="default">
+    <list name="extensions">
+      <template_reference name="exts" value="ebpextensions\strategic_point_ext" List.ItemID="1261567893">
+        <float name="capture_time" value="20" />
+        <float name="revert_time" value="15" />
+      </template_reference>
+      <template_reference name="exts" value="ebpextensions\resource_ext" List.ItemID="465392771">
+        <enum name="default_provided_resource" value="manpower" />
+        <enum_table name="resource_provided_per_second">
+          <float name="fuel" value="0" />
+          <float name="munition" value="0" />
+          <float name="manpower" value="0.1333334" />
+        </enum_table>
+        <enum_table name="total_amount_of_resources">
+          <float name="fuel" value="0" />
+          <float name="munition" value="0" />
+          <float name="manpower" value="3.402823E+38" />
+        </enum_table>
+      </template_reference>
+    </list>
+    <uniqueid name="pbgid" value="130607" />
+  </variant>
+</instance>"#;
+
+    /// Mirrors territory_strategic_point_smaller.xml: only overrides capture radius,
+    /// has no resource_ext or strategic_point_ext timing of its own.
+    const TERRITORY_STRATEGIC_POINT_SMALLER_XML: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
+<instance version="5" description="" template="ebps">
+  <variant name="default">
+    <list name="extensions">
+      <template_reference name="exts" value="ebpextensions\strategic_point_ext" List.ItemID="1261567893">
+        <template_reference name="capture_area_info" value="options\area_info_options\circle_area_option">
+          <float name="outer_radius" value="7.5" overrideParent="True" />
+        </template_reference>
+      </template_reference>
+    </list>
+    <uniqueid name="pbgid" value="2164766" />
+    <instance_reference name="parent_pbg" value="ebps\gameplay\strategic_points\strategic\territory_strategic_point" />
+  </variant>
+</instance>"#;
+
+    const TERRITORY_VICTORY_POINT_XML: &[u8] = br#"<?xml version="1.0" encoding="utf-8"?>
+<instance version="5" description="" template="ebps">
+  <variant name="default">
+    <list name="extensions">
+      <template_reference name="exts" value="ebpextensions\territory_ext" List.ItemID="-952579638">
+        <enum name="sector_entity_type" value="sector_independent" />
+      </template_reference>
+    </list>
+    <uniqueid name="pbgid" value="130629" />
+  </variant>
+</instance>"#;
+
+    #[test]
+    fn extract_game_data_resource_and_capture() {
+        let entry = ArchiveEntry {
+            path:
+                "instances/ebps/gameplay/strategic_points/strategic/territory_strategic_point.xml"
+                    .to_string(),
+            bytes: TERRITORY_STRATEGIC_POINT_XML.to_vec(),
+        };
+        let gd = extract_game_data(&[entry], LocaleStore(Default::default()), 99, || {}).unwrap();
+        let e = gd.entities.get(&130607).unwrap();
+        let resource = e.resource.expect("expected resource income");
+        assert_eq!(resource.kind, data::ResourceKind::Manpower);
+        assert!((resource.per_second - 0.1333334).abs() < 1e-6);
+        let capture = e.capture.expect("expected capture info");
+        assert_eq!(capture.capture_time, 20.0);
+        assert_eq!(capture.revert_time, 15.0);
+    }
+
+    #[test]
+    fn extract_game_data_resource_inherits_from_parent_pbg() {
+        let entries = vec![
+            ArchiveEntry {
+                path: "instances/ebps/gameplay/strategic_points/strategic/territory_strategic_point.xml".to_string(),
+                bytes: TERRITORY_STRATEGIC_POINT_XML.to_vec(),
+            },
+            ArchiveEntry {
+                path: "instances/ebps/gameplay/strategic_points/strategic/territory_strategic_point_smaller.xml".to_string(),
+                bytes: TERRITORY_STRATEGIC_POINT_SMALLER_XML.to_vec(),
+            },
+        ];
+        let gd = extract_game_data(&entries, LocaleStore(Default::default()), 99, || {}).unwrap();
+        let child = gd.entities.get(&2164766).unwrap();
+        let resource = child
+            .resource
+            .expect("shape variant should inherit resource from parent_pbg");
+        assert_eq!(resource.kind, data::ResourceKind::Manpower);
+        assert!((resource.per_second - 0.1333334).abs() < 1e-6);
+        let capture = child
+            .capture
+            .expect("shape variant should inherit capture timing from parent_pbg");
+        assert_eq!(capture.capture_time, 20.0);
+        assert_eq!(capture.revert_time, 15.0);
+    }
+
+    #[test]
+    fn extract_game_data_victory_point_has_no_resource() {
+        let entry = ArchiveEntry {
+            path: "instances/ebps/gameplay/strategic_points/victory/territory_victory_point.xml"
+                .to_string(),
+            bytes: TERRITORY_VICTORY_POINT_XML.to_vec(),
+        };
+        let gd = extract_game_data(&[entry], LocaleStore(Default::default()), 99, || {}).unwrap();
+        let e = gd.entities.get(&130629).unwrap();
+        assert!(
+            e.resource.is_none(),
+            "victory points provide no resource income"
+        );
     }
 
     // ---------------------------------------------------------------------------

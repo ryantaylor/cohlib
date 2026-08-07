@@ -18,6 +18,7 @@ attrib      = { workspace = true }
 locale      = { workspace = true }
 json-import = { workspace = true }
 image       = { workspace = true }
+scenario    = { workspace = true }
 serde_json  = { workspace = true }
 serde       = { workspace = true }
 relic-sga   = { workspace = true }

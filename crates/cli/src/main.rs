@@ -11,7 +11,6 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 mod checksums;
 mod images;
-mod scenarios;
 mod semver;
 
 fn spinner_style() -> ProgressStyle {
@@ -249,16 +248,20 @@ fn cmd_import(args: &[String]) {
     }
 
     if scenarios_sga_path.exists() {
-        match scenarios::extract_map_sizes(&scenarios_sga_path) {
-            Ok(sizes) => {
-                eprintln!("Scenario dimensions: {} scenarios", sizes.len());
-                gd.scenarios = sizes;
+        match sga::open_archive(&scenarios_sga_path) {
+            Ok(entries) => {
+                let scenarios = scenario::extract_scenarios(&entries, &gd);
+                eprintln!("Scenarios: {} extracted", scenarios.len());
+                match write_scenarios(&output_dir, &scenarios) {
+                    Ok(refs) => gd.scenarios = refs,
+                    Err(e) => eprintln!("warning: writing scenario records failed: {e}"),
+                }
             }
-            Err(e) => eprintln!("warning: scenario dimension extraction failed: {e}"),
+            Err(e) => eprintln!("warning: cannot open {}: {e}", scenarios_sga_path.display()),
         }
     } else {
         eprintln!(
-            "ScenariosMP.sga not found at {}, skipping scenario dimensions",
+            "ScenariosMP.sga not found at {}, skipping scenario extraction",
             scenarios_sga_path.display()
         );
     }
@@ -286,6 +289,41 @@ fn cmd_import(args: &[String]) {
             Err(e) => eprintln!("warning: icon extraction failed: {e}"),
         }
     }
+}
+
+/// Writes each extracted [`data::Scenario`] to `{output_dir}/scenarios/{hash}.json`,
+/// content-addressed by a hash of its serialized form, and returns the
+/// `scenario_path -> hash` map for [`data::GameData::scenarios`].
+///
+/// Scenario records rarely change between game versions, so this dedup keeps
+/// the bundled data's growth roughly flat as versions accumulate: re-running
+/// `import` on an unchanged map writes the same hash and overwrites the same
+/// file with identical bytes rather than adding a new one.
+fn write_scenarios(
+    output_dir: &Path,
+    scenarios: &std::collections::BTreeMap<String, data::Scenario>,
+) -> std::io::Result<std::collections::BTreeMap<String, String>> {
+    let scenarios_dir = output_dir.join("scenarios");
+    std::fs::create_dir_all(&scenarios_dir)?;
+
+    let mut refs = std::collections::BTreeMap::new();
+    for (path, scenario) in scenarios {
+        let json = serde_json::to_vec(scenario).expect("serialize scenario failed");
+        let hash = scenario_hash(&json);
+        std::fs::write(scenarios_dir.join(format!("{hash}.json")), &json)?;
+        refs.insert(path.clone(), hash);
+    }
+    Ok(refs)
+}
+
+/// Short SHA-256 hex digest used as a scenario record's content-addressed key.
+/// 16 hex chars (64 bits) is far more than enough to avoid collisions across
+/// the low hundreds of unique scenario records this bundle will ever hold.
+fn scenario_hash(json: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(json);
+    format!("{:x}", h.finalize())[..16].to_string()
 }
 
 fn read_exe_version(exe_path: &Path) -> Result<u32, String> {

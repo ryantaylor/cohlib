@@ -36,6 +36,13 @@ pub struct Entity {
     pub icon_name: String,
     pub spawns: Vec<String>,
     pub upgrades: Vec<String>,
+    /// Resource income, for territory point ebps (`resource_ext`). `None` for
+    /// entities that don't produce resources, including victory points.
+    #[serde(default)]
+    pub resource: Option<ResourceIncome>,
+    /// Capture/revert timing, for territory point ebps (`strategic_point_ext`).
+    #[serde(default)]
+    pub capture: Option<CaptureInfo>,
 }
 
 impl Localizable for &Entity {
@@ -156,6 +163,164 @@ pub struct MapSize {
     pub height: f32,
 }
 
+/// Resource type a territory point provides, from `resource_ext`'s
+/// `default_provided_resource`. The XML uses the singular `"munition"`; this
+/// crate always uses the plural `Munitions` to match `data:` command payloads
+/// and existing `Value` resource naming elsewhere in cohlib.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ResourceKind {
+    Fuel,
+    Munitions,
+    Manpower,
+}
+
+/// Income an ebp provides while captured, read from `resource_ext`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ResourceIncome {
+    pub kind: ResourceKind,
+    /// Raw per-second rate as stored in the attribute file. Multiply by 60 for
+    /// per-minute income — do not round the per-second rate first, or the
+    /// result will drift from the game's displayed per-minute totals (e.g.
+    /// `0.08335 * 60 = 5.001`, not `5`).
+    pub per_second: f32,
+}
+
+/// Capture/revert timing an ebp provides while captured, read from
+/// `strategic_point_ext`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct CaptureInfo {
+    pub capture_time: f32,
+    pub revert_time: f32,
+}
+
+/// Axis-aligned rectangle in scenario world-space coordinates (same space as
+/// [`ScenarioPoint::x`]/`y`, centered on the map origin).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Rect {
+    pub min_x: f32,
+    pub min_y: f32,
+    pub max_x: f32,
+    pub max_y: f32,
+}
+
+impl Rect {
+    pub fn width(&self) -> f32 {
+        self.max_x - self.min_x
+    }
+
+    pub fn height(&self) -> f32 {
+        self.max_y - self.min_y
+    }
+}
+
+/// What kind of point a [`ScenarioPoint`] is, derived from its ebp name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PointKind {
+    Fuel,
+    Munitions,
+    Manpower,
+    Victory,
+    Start,
+    Other,
+}
+
+/// Income tier of a resource point, derived from its ebp name. `None` for
+/// non-resource points (victory points, starting positions).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PointTier {
+    ExtraLow,
+    Low,
+    Medium,
+    ExtraMedium,
+    High,
+}
+
+/// A single placed point on a scenario: a resource point, victory point, or
+/// player starting position.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScenarioPoint {
+    /// Ebp name as placed on the map, e.g. `territory_fuel_point_low_smaller`.
+    pub ebp: String,
+    pub x: f32,
+    pub y: f32,
+    pub kind: PointKind,
+    #[serde(default)]
+    pub tier: Option<PointTier>,
+    /// Player index (0-based) for [`PointKind::Start`] points, `None` otherwise.
+    #[serde(default)]
+    pub owner: Option<u32>,
+    /// `income_per_second * 60` resolved from [`Entity::resource`] via the ebp's
+    /// pbgid; `0.0` for points with no resource (victory points).
+    #[serde(default)]
+    pub income_per_minute: f32,
+    #[serde(default)]
+    pub capture_time: Option<f32>,
+    /// Id of the [`Sector`] this point falls within, if sector data is available.
+    #[serde(default)]
+    pub sector: Option<u32>,
+}
+
+/// A capturable territory sector traced from `<map>_territory.override`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Sector {
+    /// 1-based sector id, matching [`ScenarioPoint::sector`].
+    pub id: u32,
+    /// Whether this is a player base/HQ sector (uncapturable, starts owned).
+    pub is_base: bool,
+    pub neighbors: Vec<u32>,
+    pub bounds: Rect,
+    /// Indices into [`Scenario::points`] for points inside this sector.
+    #[serde(default)]
+    pub points: Vec<usize>,
+    /// Outline(s) of the sector in world-space coordinates, one closed ring per
+    /// polygon (normally one, but a sector split by terrain could have more).
+    /// Traced directly from the sector-id grid — adjacent sectors' rings share
+    /// exact boundary coordinates, so there are no rendering gaps between them.
+    #[serde(default)]
+    pub rings: Vec<Vec<[f32; 2]>>,
+}
+
+/// Full extracted metadata for a multiplayer scenario: dimensions, resource
+/// points with tiers and income, sector boundaries, and playable area.
+///
+/// Constructed at import time by the `scenario` crate from `ScenariosMP.sga`;
+/// looked up via [`VersionedStore::get_scenario`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Scenario {
+    pub size: MapSize,
+    /// World-space bounding box of the actually-playable region, as read from
+    /// the map's authored soft-edge mask (`_softmapedge.override`) — distinct
+    /// from [`Scenario::size`], which includes the unplayable border margin
+    /// every scenario has around its declared world size. `None` if the mask
+    /// could not be read.
+    #[serde(default)]
+    pub playable_area: Option<Rect>,
+    #[serde(default)]
+    pub max_players: u32,
+    /// Player count per team, e.g. `[4, 4]` for a 4v4 map.
+    #[serde(default)]
+    pub teams: [u32; 2],
+    #[serde(default)]
+    pub author: String,
+    #[serde(default)]
+    pub name_loc_id: u32,
+    #[serde(default)]
+    pub description_loc_id: u32,
+    #[serde(default)]
+    pub scenario_type: u32,
+    /// `HeaderInfo.map_origin` — `2` indicates a community (Steam Workshop) map.
+    #[serde(default)]
+    pub map_origin: u32,
+    #[serde(default)]
+    pub visible_in_lobby: bool,
+    /// Empty for scenarios where only dimensions could be recovered (e.g.
+    /// versions migrated from the old size-only bundle format).
+    #[serde(default)]
+    pub points: Vec<ScenarioPoint>,
+    #[serde(default)]
+    pub sectors: Vec<Sector>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameData {
     pub version: Version,
@@ -169,9 +334,13 @@ pub struct GameData {
     #[serde(default)]
     pub semver: Option<Semver>,
     /// Keyed by normalized scenario path (`scenarios/multiplayer/.../<name>`, no
-    /// `data:` prefix, forward slashes) — see [`normalize_scenario`].
+    /// `data:` prefix, forward slashes) — see [`normalize_scenario`]. Values are
+    /// content hashes into [`VersionedStore`]'s shared scenario table, not
+    /// [`Scenario`] records themselves: scenarios rarely change between game
+    /// versions, so records are deduplicated across the whole bundle rather than
+    /// repeated per version.
     #[serde(default)]
-    pub scenarios: BTreeMap<String, MapSize>,
+    pub scenarios: BTreeMap<String, String>,
 }
 
 impl GameData {
@@ -212,6 +381,18 @@ fn normalize_scenario(scenario: &str) -> String {
 pub struct VersionedStore {
     /// Sorted ascending by version number.
     versions: Vec<GameData>,
+    /// Shared across all versions, keyed by content hash — see [`GameData::scenarios`].
+    scenario_data: BTreeMap<String, Scenario>,
+}
+
+/// On-disk/bundled shape: versions plus the shared, deduplicated scenario table
+/// they reference by hash. Used by both `build.rs` (embedding) and
+/// [`VersionedStore::bundled`]/[`VersionedStore::from_dir`] (loading).
+#[derive(Debug, Serialize, Deserialize)]
+struct Bundle {
+    versions: Vec<GameData>,
+    #[serde(default)]
+    scenarios: BTreeMap<String, Scenario>,
 }
 
 impl VersionedStore {
@@ -219,6 +400,7 @@ impl VersionedStore {
     pub fn new() -> Self {
         Self {
             versions: Vec::new(),
+            scenario_data: BTreeMap::new(),
         }
     }
 
@@ -232,14 +414,18 @@ impl VersionedStore {
         decoder
             .read_to_end(&mut json)
             .expect("bundled game data decompression failed");
-        let versions: Vec<GameData> =
-            serde_json::from_slice(&json).expect("bundled game data is corrupt");
-        let mut store = Self { versions };
+        let bundle: Bundle = serde_json::from_slice(&json).expect("bundled game data is corrupt");
+        let mut store = Self {
+            versions: bundle.versions,
+            scenario_data: bundle.scenarios,
+        };
         store.versions.sort_by_key(|g| g.version);
         store
     }
 
-    /// Load all `game_data.json` files from a directory tree organised as `{dir}/{version}/game_data.json`.
+    /// Load all `game_data.json` files from a directory tree organised as
+    /// `{dir}/{version}/game_data.json`, plus the shared scenario table at
+    /// `{dir}/scenarios/{hash}.json` (see [`GameData::scenarios`]), if present.
     pub fn from_dir(dir: &Path) -> Result<Self, Error> {
         let mut store = Self::new();
         let read =
@@ -254,6 +440,27 @@ impl VersionedStore {
                 store.add_version(gd);
             }
         }
+
+        let scenarios_dir = dir.join("scenarios");
+        if scenarios_dir.is_dir() {
+            let read = std::fs::read_dir(&scenarios_dir)
+                .map_err(|e| Error::Load(format!("cannot read scenarios dir: {e}")))?;
+            for entry in read.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                let Some(hash) = path.file_stem().and_then(|s| s.to_str()) else {
+                    continue;
+                };
+                let text = std::fs::read_to_string(&path)
+                    .map_err(|e| Error::Load(format!("cannot read {}: {e}", path.display())))?;
+                let scenario: Scenario = serde_json::from_str(&text)
+                    .map_err(|e| Error::Load(format!("cannot parse {}: {e}", path.display())))?;
+                store.scenario_data.insert(hash.to_string(), scenario);
+            }
+        }
+
         Ok(store)
     }
 
@@ -265,6 +472,13 @@ impl VersionedStore {
             let idx = self.versions.partition_point(|g| g.version < data.version);
             self.versions.insert(idx, data);
         }
+    }
+
+    /// Adds a [`Scenario`] record to the shared table under `hash`, for a
+    /// [`GameData::scenarios`] entry to reference. Replaces any existing record
+    /// under the same hash.
+    pub fn add_scenario(&mut self, hash: impl Into<String>, scenario: Scenario) {
+        self.scenario_data.insert(hash.into(), scenario);
     }
 
     /// Returns the number of versions loaded.
@@ -337,16 +551,27 @@ impl VersionedStore {
         self.resolve(build, |gd| gd.locale.get(loc_id))
     }
 
-    /// Returns the [`MapSize`] for `scenario` at `build`, with version fallback.
+    /// Returns the full [`Scenario`] record for `scenario` at `build`, with
+    /// version fallback.
     ///
     /// `scenario` accepts either raw replay form (`data:scenarios\...`) or the
     /// normalized forward-slash form — see [`normalize_scenario`]. Only scenarios
     /// re-imported since this field was added carry a value, so builds before that
     /// fall through to the nearest version (older or newer) that does — maps are
-    /// rarely resized between patches, so this is normally the correct answer.
-    pub fn get_map_size(&self, scenario: &str, build: Version) -> Option<&MapSize> {
+    /// rarely resized or re-territoried between patches, so this is normally the
+    /// correct answer. Scenario records are deduplicated by content hash across
+    /// versions (see [`GameData::scenarios`]), so this resolves the hash for
+    /// `build` first, then looks it up in the shared table.
+    pub fn get_scenario(&self, scenario: &str, build: Version) -> Option<&Scenario> {
         let key = normalize_scenario(scenario);
-        self.resolve(build, |gd| gd.scenarios.get(&key))
+        let hash = self.resolve(build, |gd| gd.scenarios.get(&key))?;
+        self.scenario_data.get(hash)
+    }
+
+    /// Returns the [`MapSize`] for `scenario` at `build`, with version fallback.
+    /// Shorthand for `get_scenario(...).map(|s| &s.size)` — see [`get_scenario`](Self::get_scenario).
+    pub fn get_map_size(&self, scenario: &str, build: Version) -> Option<&MapSize> {
+        self.get_scenario(scenario, build).map(|s| &s.size)
     }
 
     /// Returns the localized string name for `pbgid` at `build`, with version fallback,
@@ -696,6 +921,8 @@ mod tests {
                 icon_name: String::new(),
                 spawns: vec![],
                 upgrades: vec![],
+                resource: None,
+                capture: None,
             },
         );
         gd
@@ -829,6 +1056,8 @@ mod tests {
                 icon_name: icon.to_string(),
                 spawns: vec![],
                 upgrades: vec![],
+                resource: None,
+                capture: None,
             },
         );
         gd

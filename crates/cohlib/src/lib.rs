@@ -2,7 +2,9 @@ mod error;
 
 pub use build_order::{extract_build_order, BuildAction, BuildActionKind, BuildOrder};
 pub use data::{
-    GameData, LocaleStore, MapSize, ScreenNameFormatter, Semver, Version, VersionedStore,
+    CaptureInfo, GameData, LocaleStore, MapSize, PointKind, PointTier, Rect, ResourceIncome,
+    ResourceKind, Scenario, ScenarioPoint, ScreenNameFormatter, Sector, Semver, Version,
+    VersionedStore,
 };
 pub use error::Error;
 pub use replay::command_data::{

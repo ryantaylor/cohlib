@@ -56,6 +56,7 @@ fn main() -> Result<(), cohlib::Error> {
 | `locale` | Parse English localization from SGA archives, `.ucs` text, tab-separated `.txt`, or JSON |
 | `json_import` | Import `GameData` from per-version JSON files (coh3-data format) |
 | `image` | Convert RRTEX icon files to WebP |
+| `scenario` | Extract map metadata (points, sectors, playable area) from `ScenariosMP.sga` |
 
 ## API reference
 
@@ -203,6 +204,8 @@ pub struct Entity {
     pub icon_name: String,
     pub spawns: Vec<String>,    // squad paths this building can produce
     pub upgrades: Vec<String>,  // upgrade paths available from this building
+    pub resource: Option<ResourceIncome>,  // territory point ebps only
+    pub capture: Option<CaptureInfo>,      // territory point ebps only
 }
 
 pub struct Squad {
@@ -241,6 +244,72 @@ pub struct GameData {
     pub abilities: HashMap<u32, Ability>,
     pub locale: LocaleStore,
 }
+```
+
+### Scenario (map) data
+
+```rust
+impl VersionedStore {
+    /// Full scenario record: dimensions, points, sectors, playable area.
+    pub fn get_scenario(&self, scenario: &str, build: Version) -> Option<&Scenario>
+
+    /// Shorthand for get_scenario(...).map(|s| &s.size).
+    pub fn get_map_size(&self, scenario: &str, build: Version) -> Option<&MapSize>
+}
+```
+
+`scenario` accepts either a replay's raw `map_filename()` form (`data:scenarios\...`) or the normalized forward-slash form.
+
+```rust
+pub struct Scenario {
+    pub size: MapSize,
+    pub playable_area: Option<Rect>,   // authored playable region; smaller than `size`
+    pub max_players: u32,
+    pub teams: [u32; 2],
+    pub author: String,
+    pub name_loc_id: u32,
+    pub description_loc_id: u32,
+    pub scenario_type: u32,
+    pub map_origin: u32,               // 2 == community (Workshop) map
+    pub visible_in_lobby: bool,
+    pub points: Vec<ScenarioPoint>,
+    pub sectors: Vec<Sector>,
+}
+
+pub struct ScenarioPoint {
+    pub ebp: String,                   // e.g. "territory_fuel_point_low_smaller"
+    pub x: f32,
+    pub y: f32,
+    pub kind: PointKind,                // Fuel | Munitions | Manpower | Victory | Start | Other
+    pub tier: Option<PointTier>,        // ExtraLow | Low | Medium | ExtraMedium | High
+    pub owner: Option<u32>,             // player index, for Start points
+    pub income_per_minute: f32,
+    pub capture_time: Option<f32>,
+    pub sector: Option<u32>,
+}
+
+pub struct Sector {
+    pub id: u32,
+    pub is_base: bool,                  // player base/HQ sector
+    pub neighbors: Vec<u32>,
+    pub bounds: Rect,
+    pub points: Vec<usize>,             // indices into Scenario::points
+    pub rings: Vec<Vec<[f32; 2]>>,      // outline(s), sharing exact coordinates with neighbors
+}
+
+pub struct Rect { pub min_x: f32, pub min_y: f32, pub max_x: f32, pub max_y: f32 }
+impl Rect {
+    pub fn width(&self) -> f32
+    pub fn height(&self) -> f32
+}
+```
+
+`Entity` also carries resource income and capture timing for territory point ebps:
+
+```rust
+pub struct ResourceIncome { pub kind: ResourceKind, pub per_second: f32 }
+pub enum ResourceKind { Fuel, Munitions, Manpower }
+pub struct CaptureInfo { pub capture_time: f32, pub revert_time: f32 }
 ```
 
 ### SGA archive extraction
@@ -356,7 +425,7 @@ Extract game data from a CoH3 SGA depot for a specific build.
 cohlib import <depot_path> --version <build_number> --output <data_dir>
 ```
 
-Reads `<depot_path>/anvil/archives/ReferenceAttributes.sga` for entity data and `LocaleEnglish.sga` for locale strings. Writes `<data_dir>/<version>/game_data.json`.
+Reads `<depot_path>/anvil/archives/ReferenceAttributes.sga` for entity data and `LocaleEnglish.sga` for locale strings, and `ScenariosMP.sga` for map metadata (points, sectors, playable area). Writes `<data_dir>/<version>/game_data.json` plus any new/changed scenario records under `<data_dir>/scenarios/` — see [Scenario (map) data](#scenario-map-data).
 
 **Example:**
 
@@ -388,3 +457,7 @@ cargo test --test replay        # replay parse tests
 cargo clippy -- -D warnings
 cargo fmt --check
 ```
+
+## Acknowledgements
+
+Scenario map metadata extraction (`crates/scenario/`) — specifically the `.layer`/`.scenario` placed-entity scan and the sector boundary/geometry approach — is informed by [cohstats/coh3-data](https://github.com/cohstats/coh3-data)'s `scripts/mp-maps/`, the only other public CoH3 scenario/territory parser and the source of that format documentation. See the relevant module doc comments in `crates/scenario/src/` for what's derived from it versus this crate's own work (notably, playable-area extraction uses the map's authored soft-edge mask rather than their point-bounding-box estimate).

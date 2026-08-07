@@ -1,11 +1,13 @@
 // build.rs — embeds compiled-in game data from data/{version}/game_data.json files.
 //
 // Reads all per-version game_data.json files under the workspace-root `data/` directory,
-// concatenates them into a JSON array, and writes a compressed binary blob
+// plus the shared, deduplicated scenario records under `data/scenarios/{hash}.json`
+// (see GameData::scenarios doc comment), assembles them into `{"versions": [...],
+// "scenarios": {...}}`, gzip-compresses the result, and writes a compressed binary blob
 // to OUT_DIR/game_data.bin, which is then embedded via `include_bytes!` in
 // VersionedStore::bundled().
 
-use std::{env, fs, io::Write, path::Path};
+use std::{collections::BTreeMap, env, fs, io::Write, path::Path};
 
 fn main() {
     // data/ lives at the workspace root, two levels above this crate (crates/data/).
@@ -23,7 +25,7 @@ fn main() {
         let mut entries: Vec<_> = fs::read_dir(&data_dir)
             .expect("cannot read data/")
             .flatten()
-            .filter(|e| e.path().is_dir())
+            .filter(|e| e.path().is_dir() && e.file_name() != "scenarios")
             .collect();
         entries.sort_by_key(|e| e.file_name());
 
@@ -39,7 +41,33 @@ fn main() {
         }
     }
 
-    let json = serde_json::to_vec(&versions).expect("cannot serialize game data");
+    let mut scenarios: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+    let scenarios_dir = data_dir.join("scenarios");
+    if scenarios_dir.is_dir() {
+        let mut entries: Vec<_> = fs::read_dir(&scenarios_dir)
+            .expect("cannot read data/scenarios/")
+            .flatten()
+            .filter(|e| e.path().extension().and_then(|e| e.to_str()) == Some("json"))
+            .collect();
+        entries.sort_by_key(|e| e.file_name());
+
+        for entry in entries {
+            let path = entry.path();
+            let hash = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or_else(|| panic!("bad scenario filename: {}", path.display()))
+                .to_string();
+            let text = fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+            let val: serde_json::Value = serde_json::from_str(&text)
+                .unwrap_or_else(|e| panic!("cannot parse {}: {e}", path.display()));
+            scenarios.insert(hash, val);
+        }
+    }
+
+    let bundle = serde_json::json!({ "versions": versions, "scenarios": scenarios });
+    let json = serde_json::to_vec(&bundle).expect("cannot serialize game data");
 
     // Compress with flate2 (gzip).
     let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());

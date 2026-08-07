@@ -1,0 +1,20 @@
+{
+  "size": {
+    "width": 352.0,
+    "height": 352.0
+  },
+  "playable_area": null,
+  "max_players": 0,
+  "teams": [
+    0,
+    0
+  ],
+  "author": "",
+  "name_loc_id": 0,
+  "description_loc_id": 0,
+  "scenario_type": 0,
+  "map_origin": 0,
+  "visible_in_lobby": false,
+  "points": [],
+  "sectors": []
+}
