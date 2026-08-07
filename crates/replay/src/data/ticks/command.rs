@@ -40,9 +40,11 @@ pub enum CommandData {
     /// A blueprint and zero or more targeting values, with no source (used by
     /// `PCMD_Ability`, whose source is always the issuing player).
     PbgidTargeted(Blueprint, TargetValues),
-    /// A blueprint, legacy source identifier, and zero or more targeting values (used by
-    /// `CMD_Ability`).
-    SourcedPbgidTargeted(Blueprint, u16, TargetValues),
+    /// `CMD_Ability`'s payload: a legacy source identifier, an optional blueprint
+    /// (absent when this command continues/updates an already-active ability's target
+    /// rather than starting a new one, the same dual shape as `SCMD_Ability` — see
+    /// `Ability`), and zero or more targeting values.
+    SourcedPbgidTargeted(Option<Blueprint>, u16, TargetValues),
     /// `SCMD_Ability`'s payload: a source, an optional blueprint (absent when this
     /// command continues/updates an already-active ability's target rather than starting
     /// a new one), and zero or more targeting values.
@@ -190,14 +192,22 @@ impl CommandData {
         )(input)
     }
 
-    /// Header, source, then a blueprint-and-targets block (see
-    /// `parse_blueprint_and_targets`), preserving the legacy source identifier like
-    /// [`Self::parse_sourced_pbgid`] does.
+    /// Header, source, then a parameter block, preserving the legacy source identifier
+    /// like [`Self::parse_sourced_pbgid`] does. Block kind `0x01` carries only targeting
+    /// values with no blueprint at all (continuing/updating an already-active ability's
+    /// target, the same shape `SCMD_Ability` uses — see [`Self::parse_ability`]); any
+    /// other kind is a blueprint-and-targets block (see `parse_blueprint_and_targets`).
     pub fn parse_sourced_pbgid_targeted(input: Span) -> ParserResult<CommandData> {
         map(
             tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
             |(_, source, block)| {
-                let (blueprint, targets) = parse_blueprint_and_targets(&expect_block(block));
+                let block = expect_block(block);
+                let (blueprint, targets) = if block.kind == 0x01 {
+                    (None, parse_targets(block.data))
+                } else {
+                    let (blueprint, targets) = parse_blueprint_and_targets(&block);
+                    (Some(blueprint), targets)
+                };
                 CommandData::SourcedPbgidTargeted(blueprint, source.legacy_identifier(), targets)
             },
         )(input)

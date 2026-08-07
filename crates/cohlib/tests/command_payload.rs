@@ -167,6 +167,38 @@ fn mod_scoped_blueprints_decode_with_their_content_pack_uuid() {
     );
 }
 
+/// `CMD_Ability` (`Command::UseAbility`) has the same dual shape `SCMD_Ability`
+/// (`Command::UseAbilitySquad`) does: most instances carry a blueprint, but a parameter
+/// block of kind `0x01` means the command is continuing/updating an already-active
+/// ability's target and carries only targeting values, no blueprint at all.
+#[test]
+fn use_ability_without_a_blueprint_decodes_with_no_pbgid() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("replays")
+        .join("cmd_ability_no_blueprint.rec");
+    let replay = parse_fixture(&path);
+
+    let use_abilities: Vec<_> = replay
+        .players()
+        .iter()
+        .flat_map(|player| player.commands())
+        .filter_map(|command| match command {
+            Command::UseAbility(data) => Some(data),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(use_abilities.len(), 29, "expected 29 UseAbility commands");
+    assert_eq!(
+        use_abilities
+            .iter()
+            .filter(|data| data.pbgid().is_none())
+            .count(),
+        1,
+        "expected exactly one UseAbility command with no pbgid"
+    );
+}
+
 /// Retreats were parameter-less until a later game build let them carry a facing, so
 /// they decode through the same targeting machinery as movement commands rather than as
 /// a source-only command.

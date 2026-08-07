@@ -3,8 +3,8 @@
 use crate::{
     command_data::{
         Ability, BroadcastMessage, CommandPayload, Construction, Empty, Orientation, Pbgid,
-        Position, ResourceBonus, Source, SourcePbgid, Sourced, SourcedIndex, SourcedPbgid,
-        Targeted, Unknown,
+        Position, ResourceBonus, Source, SourcePbgid, Sourced, SourcedAbility, SourcedIndex,
+        SourcedPbgid, Targeted, Unknown,
     },
     command_type::CommandType,
     data::ticks::{self, value::TargetValues},
@@ -91,17 +91,21 @@ pub enum Command {
     /// A squad researching an upgrade, `SCMD_Upgrade` — the squad-level equivalent of
     /// `BuildGlobalUpgrade`.
     UpgradeSquad(SourcePbgid),
-    UseAbility(SourcedPbgid),
+    /// An entity or squad using an ability, `CMD_Ability` — see [`SourcedAbility`] on
+    /// why its pbgid is optional, the same as [`Self::UseAbilitySquad`]. Differs from
+    /// that variant only in how the source is modeled (a legacy `u16` identifier here,
+    /// a full [`Source`] there).
+    UseAbility(SourcedAbility),
     /// A squad using an ability, `SCMD_Ability` — see [`Ability`] on why its pbgid is
-    /// optional, unlike [`Self::UseAbility`].
+    /// optional, the same as [`Self::UseAbility`].
     UseAbilitySquad(Ability),
     UseBattlegroupAbility(Pbgid),
     Unknown(Unknown),
 }
 
 /// A borrowed view of a command's payload, discriminated by payload *shape* rather than
-/// by semantic variant. Twelve shapes cover all 37 variants, so consumers that only
-/// care about the data layout — serializers, hash builders — match on twelve arms
+/// by semantic variant. Thirteen shapes cover all 37 variants, so consumers that only
+/// care about the data layout — serializers, hash builders — match on thirteen arms
 /// instead of thirty-seven.
 #[derive(Debug, Clone, Copy)]
 pub enum CommandPayloadRef<'a> {
@@ -112,6 +116,7 @@ pub enum CommandPayloadRef<'a> {
     Pbgid(&'a Pbgid),
     ResourceBonus(&'a ResourceBonus),
     Sourced(&'a Sourced),
+    SourcedAbility(&'a SourcedAbility),
     SourcedIndex(&'a SourcedIndex),
     SourcedPbgid(&'a SourcedPbgid),
     SourcePbgid(&'a SourcePbgid),
@@ -181,7 +186,7 @@ command_variants! {
     Unload(Targeted),
     UnloadSquads(Targeted),
     UpgradeSquad(SourcePbgid),
-    UseAbility(SourcedPbgid),
+    UseAbility(SourcedAbility),
     UseAbilitySquad(Ability),
     UseBattlegroupAbility(Pbgid),
     Unknown(Unknown),
@@ -208,8 +213,9 @@ impl Command {
     }
 
     /// The blueprint this command references, or `None` for commands that reference
-    /// none. `Command::UseAbilitySquad` can carry a payload with no pbgid even though
-    /// its shape has one, so this being `None` doesn't imply the shape lacks the field.
+    /// none. `Command::UseAbility` and `Command::UseAbilitySquad` can each carry a
+    /// payload with no pbgid even though their shape has one, so this being `None`
+    /// doesn't imply the shape lacks the field.
     pub fn pbgid(&self) -> Option<u32> {
         self.common().pbgid()
     }
@@ -415,7 +421,7 @@ impl Command {
                 match action_type {
                     CommandType::CMD_Ability => {
                         let (position, facing, orientation, entity) = split_targets(targets);
-                        Self::UseAbility(SourcedPbgid::new(
+                        Self::UseAbility(SourcedAbility::new(
                             action_type,
                             tick,
                             index,
