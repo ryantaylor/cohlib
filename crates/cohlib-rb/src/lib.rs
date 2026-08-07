@@ -8,7 +8,8 @@ mod command;
 
 use cohlib::{
     extract_build_order, parse_replay, BuildAction, BuildActionKind, BuildOrder, Command, MapPoint,
-    MapSize, Message, Player, Replay, Semver, StartingPosition, VersionedStore,
+    MapSize, Message, Player, Rect, Replay, ScenarioPoint, Sector, Semver, StartingPosition,
+    VersionedStore,
 };
 use magnus::{function, method, prelude::*, Error, RArray, RHash, Ruby};
 
@@ -228,6 +229,112 @@ fn map_size_to_array(ruby: &Ruby, size: &MapSize) -> RArray {
     arr
 }
 
+fn rect_to_hash(ruby: &Ruby, rect: &Rect) -> RHash {
+    let h = ruby.hash_new();
+    h.aset(ruby.to_symbol("min_x"), rect.min_x).unwrap();
+    h.aset(ruby.to_symbol("min_y"), rect.min_y).unwrap();
+    h.aset(ruby.to_symbol("max_x"), rect.max_x).unwrap();
+    h.aset(ruby.to_symbol("max_y"), rect.max_y).unwrap();
+    h
+}
+
+fn scenario_point_to_hash(ruby: &Ruby, point: &ScenarioPoint) -> RHash {
+    let h = ruby.hash_new();
+    h.aset(ruby.to_symbol("ebp"), point.ebp.clone()).unwrap();
+    h.aset(ruby.to_symbol("x"), point.x).unwrap();
+    h.aset(ruby.to_symbol("y"), point.y).unwrap();
+    h.aset(ruby.to_symbol("kind"), format!("{:?}", point.kind))
+        .unwrap();
+    h.aset(ruby.to_symbol("tier"), point.tier.map(|t| format!("{t:?}")))
+        .unwrap();
+    h.aset(ruby.to_symbol("owner"), point.owner).unwrap();
+    h.aset(ruby.to_symbol("income_per_minute"), point.income_per_minute)
+        .unwrap();
+    h.aset(ruby.to_symbol("capture_time"), point.capture_time)
+        .unwrap();
+    h.aset(ruby.to_symbol("sector"), point.sector).unwrap();
+    h
+}
+
+fn sector_to_hash(ruby: &Ruby, sector: &Sector) -> RHash {
+    let h = ruby.hash_new();
+    h.aset(ruby.to_symbol("id"), sector.id).unwrap();
+    h.aset(ruby.to_symbol("is_base"), sector.is_base).unwrap();
+    let neighbors = ruby.ary_new();
+    for &n in &sector.neighbors {
+        neighbors.push(n).unwrap();
+    }
+    h.aset(ruby.to_symbol("neighbors"), neighbors).unwrap();
+    h.aset(ruby.to_symbol("bounds"), rect_to_hash(ruby, &sector.bounds))
+        .unwrap();
+    let points = ruby.ary_new();
+    for &idx in &sector.points {
+        points.push(idx).unwrap();
+    }
+    h.aset(ruby.to_symbol("points"), points).unwrap();
+    let rings = ruby.ary_new();
+    for ring in &sector.rings {
+        let r = ruby.ary_new();
+        for p in ring {
+            let coord = ruby.ary_new();
+            coord.push(p[0]).unwrap();
+            coord.push(p[1]).unwrap();
+            r.push(coord).unwrap();
+        }
+        rings.push(r).unwrap();
+    }
+    h.aset(ruby.to_symbol("rings"), rings).unwrap();
+    h
+}
+
+fn versioned_store_scenario(
+    ruby: &Ruby,
+    rb_self: &VersionedStore,
+    scenario: String,
+    build: u32,
+) -> Option<RHash> {
+    let s = rb_self.get_scenario(&scenario, build)?;
+
+    let h = ruby.hash_new();
+    h.aset(ruby.to_symbol("size"), map_size_to_array(ruby, &s.size))
+        .unwrap();
+    h.aset(
+        ruby.to_symbol("playable_area"),
+        s.playable_area.map(|r| rect_to_hash(ruby, &r)),
+    )
+    .unwrap();
+    h.aset(ruby.to_symbol("max_players"), s.max_players)
+        .unwrap();
+    let teams = ruby.ary_new();
+    teams.push(s.teams[0]).unwrap();
+    teams.push(s.teams[1]).unwrap();
+    h.aset(ruby.to_symbol("teams"), teams).unwrap();
+    h.aset(ruby.to_symbol("author"), s.author.clone()).unwrap();
+    h.aset(ruby.to_symbol("name_loc_id"), s.name_loc_id)
+        .unwrap();
+    h.aset(ruby.to_symbol("description_loc_id"), s.description_loc_id)
+        .unwrap();
+    h.aset(ruby.to_symbol("scenario_type"), s.scenario_type)
+        .unwrap();
+    h.aset(ruby.to_symbol("map_origin"), s.map_origin).unwrap();
+    h.aset(ruby.to_symbol("visible_in_lobby"), s.visible_in_lobby)
+        .unwrap();
+
+    let points = ruby.ary_new();
+    for p in &s.points {
+        points.push(scenario_point_to_hash(ruby, p)).unwrap();
+    }
+    h.aset(ruby.to_symbol("points"), points).unwrap();
+
+    let sectors = ruby.ary_new();
+    for sector in &s.sectors {
+        sectors.push(sector_to_hash(ruby, sector)).unwrap();
+    }
+    h.aset(ruby.to_symbol("sectors"), sectors).unwrap();
+
+    Some(h)
+}
+
 fn versioned_store_map_size(
     ruby: &Ruby,
     rb_self: &VersionedStore,
@@ -391,6 +498,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     store_class.define_method("localize", method!(versioned_store_localize, 2))?;
     store_class.define_method("icon_for", method!(versioned_store_icon_for, 2))?;
     store_class.define_method("map_size", method!(versioned_store_map_size, 2))?;
+    store_class.define_method("scenario", method!(versioned_store_scenario, 2))?;
     store_class.define_method("checksums_for", method!(versioned_store_checksums_for, 1))?;
     store_class.define_method("semver_for", method!(versioned_store_semver_for, 1))?;
     store_class.define_method(

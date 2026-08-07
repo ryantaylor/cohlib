@@ -257,6 +257,9 @@ fn parse_entity_leaf(
         icon_name,
         spawns,
         upgrades,
+        // cohdata JSON doesn't carry resource_ext/strategic_point_ext fields.
+        resource: None,
+        capture: None,
     };
 
     out.insert(pbgid, entity);

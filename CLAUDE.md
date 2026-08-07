@@ -38,6 +38,7 @@ crates/
 ├── locale/        Parse locale from SGA (AES-128-CBC + zlib), .ucs, .txt, or JSON
 ├── json-import/   Import GameData from per-version JSON files (cohdata format)
 ├── image/         Convert RRTEX textures (BC1/BC3) to WebP
+├── scenario/      Extract map metadata (points, sectors, playable area) from ScenariosMP.sga
 └── cli/           Maintainer CLI binary (`cohlib` + `discover` binaries)
 ```
 
@@ -50,8 +51,9 @@ locale                ← data + sga
 attrib                ← data + sga
 json-import           ← data
 image                 ← standalone
+scenario              ← data + sga
 cohlib                ← replay + data + build-order  (public facade)
-cli                   ← cohlib + sga + attrib + locale + json-import + image
+cli                   ← cohlib + sga + attrib + locale + json-import + image + scenario
 ```
 
 Each crate has its own `Error` type. `cohlib::Error` wraps `replay::Error`, `data::Error`, and `build_order::Error`.
@@ -60,12 +62,18 @@ Public API is re-exported from `crates/cohlib/src/lib.rs`: `parse_replay`, `extr
 
 ### Build data pipeline
 
-`crates/data/build.rs` scans `data/<version>/game_data.json` files at the workspace root, concatenates them into a JSON array, gzip-compresses the result, and writes it to `OUT_DIR/game_data.bin`. `VersionedStore::bundled()` decompresses and deserializes this at runtime via `include_bytes!`.
+`crates/data/build.rs` scans `data/<version>/game_data.json` files at the workspace root, plus the shared `data/scenarios/<hash>.json` scenario records (see below), assembles `{"versions": [...], "scenarios": {...}}`, gzip-compresses it, and writes it to `OUT_DIR/game_data.bin`. `VersionedStore::bundled()` decompresses and deserializes this at runtime via `include_bytes!`.
 
 Adding a new game version:
 1. `cargo run --bin cohlib -- import <depot_path> --version <build_number> --output data/`
-2. Commit `data/<build_number>/game_data.json`
+2. Commit `data/<build_number>/game_data.json` and any new/changed files under `data/scenarios/`
 3. `cargo build` picks it up automatically
+
+### Scenario (map) data (`crates/scenario/`)
+
+Extracts per-map metadata from `ScenariosMP.sga`: `.info` (Lua-like table) for dimensions, resource/victory/start point placement and tiers, author, and team layout; `<map>_territory.override` (Relic Chunky) for sector boundaries and adjacency; `<map>_softmapedge.override` for the playable-area mask; and the map's `.layer` files for actually-placed point entities, reconciled against `.info` since it can go stale after edits. Income and capture timing are joined in from `GameData.entities` (`Entity::resource`/`Entity::capture`, populated by `attrib` from `resource_ext`/`strategic_point_ext`). See `crates/scenario/src/lib.rs`'s module doc for the full pipeline and format credits — the `.layer`/`.scenario` entity-scan and sector-geometry approach are informed by [cohstats/coh3-data](https://github.com/cohstats/coh3-data), the only other public CoH3 scenario parser.
+
+Scenario records (`data::Scenario`) are deduplicated across game versions by content hash, since maps rarely change between patches: `GameData.scenarios` maps a normalized scenario path to a hash, and `VersionedStore` holds the actual `Scenario` records in a separate shared table (`data/scenarios/<hash>.json` on disk) looked up via `get_scenario()`/`get_map_size()`. `crates/cli/src/main.rs`'s `write_scenarios` computes the hash and writes each record at import time.
 
 ### Replay parsing (`crates/replay/`)
 
@@ -89,14 +97,14 @@ Test replay fixtures live in `crates/cohlib/replays/`.
 
 `VersionedStore` resolves lookups with fallback: exact build → nearest older version → nearest newer version. This handles replays recorded on patch versions not in the bundle.
 
-`GameData` holds `HashMap<u32, T>` for each entity type keyed by `pbgid` (Relic engine ID). `Entity` has `spawns` (squad paths) and `upgrades` (upgrade paths) lists. `Ability` has `autobuild: bool` and `builds: Option<String>` for building placement abilities.
+`GameData` holds `HashMap<u32, T>` for each entity type keyed by `pbgid` (Relic engine ID). `Entity` has `spawns` (squad paths) and `upgrades` (upgrade paths) lists, plus `resource: Option<ResourceIncome>` and `capture: Option<CaptureInfo>` for territory point ebps. `Ability` has `autobuild: bool` and `builds: Option<String>` for building placement abilities.
 
 ### CLI (`crates/cli/`)
 
 Maintainer tooling only — not needed for library use.
 
 - `cohlib populate <source_dirs>... --output <data_dir>` — import from cohdata/reinforce JSON directories
-- `cohlib import <depot_path> --version <build> --output <data_dir> [--images <dir>] [--icons-sga <path>] [--scenarios-sga <path>]` — extract from CoH3 SGA depot
+- `cohlib import <depot_path> --version <build> --output <data_dir> [--images <dir>] [--icons-sga <path>] [--scenarios-sga <path>]` — extract from CoH3 SGA depot. `--scenarios-sga` defaults to `<depot_path>/anvil/archives/ScenariosMP.sga` and, if found, extracts full `Scenario` records via `scenario::extract_scenarios` and writes them to `<output_dir>/scenarios/`.
 - `discover` — developer binary for inspecting raw SGA archive contents
 
 **Sample depot** (local Steam installation, SGA archives):

@@ -216216,317 +216216,83 @@
     "patch": 2
   },
   "scenarios": {
-    "scenarios/multiplayer/alamein_4p/alamein_4p": {
-      "width": 416.0,
-      "height": 416.0
-    },
-    "scenarios/multiplayer/ancona_railyard_2p/ancona_railyard_2p": {
-      "width": 384.0,
-      "height": 384.0
-    },
-    "scenarios/multiplayer/angoville_farms_2p/angoville_farms_2p": {
-      "width": 320.0,
-      "height": 320.0
-    },
-    "scenarios/multiplayer/benghazi_6p/benghazi_6p": {
-      "width": 480.0,
-      "height": 480.0
-    },
-    "scenarios/multiplayer/black_gold_8p/black_gold_8p": {
-      "width": 672.0,
-      "height": 544.0
-    },
-    "scenarios/multiplayer/butcher_and_bolt_2p/butcher_and_bolt_2p": {
-      "width": 416.0,
-      "height": 416.0
-    },
-    "scenarios/multiplayer/catania_crossing_6p/catania_crossing_6p": {
-      "width": 544.0,
-      "height": 400.0
-    },
-    "scenarios/multiplayer/cliff_crossing_2p/cliff_crossing_2p": {
-      "width": 352.0,
-      "height": 384.0
-    },
-    "scenarios/multiplayer/cliff_crossing_2p/cliff_crossing_2p_video/cliff_crossing_2p_video": {
-      "width": 352.0,
-      "height": 384.0
-    },
-    "scenarios/multiplayer/community/across_the_rhine_6p/across_the_rhine_6p": {
-      "width": 512.0,
-      "height": 448.0
-    },
-    "scenarios/multiplayer/community/bologna_2p/bologna_2p": {
-      "width": 416.0,
-      "height": 416.0
-    },
-    "scenarios/multiplayer/community/castello_8p/castello_8p": {
-      "width": 544.0,
-      "height": 608.0
-    },
-    "scenarios/multiplayer/community/djebel_2p/djebel_2p": {
-      "width": 352.0,
-      "height": 352.0
-    },
-    "scenarios/multiplayer/community/djebel_4p/djebel_4p": {
-      "width": 352.0,
-      "height": 352.0
-    },
-    "scenarios/multiplayer/community/egletons_2p/egletons_2p": {
-      "width": 320.0,
-      "height": 320.0
-    },
-    "scenarios/multiplayer/community/eindhoven_4p/eindhoven": {
-      "width": 416.0,
-      "height": 416.0
-    },
-    "scenarios/multiplayer/community/faymonville_2p/faymonville": {
-      "width": 384.0,
-      "height": 384.0
-    },
-    "scenarios/multiplayer/community/gothic_line_8p/gothic_line_8p": {
-      "width": 608.0,
-      "height": 496.0
-    },
-    "scenarios/multiplayer/community/halfa_8p/halfa_8p": {
-      "width": 512.0,
-      "height": 512.0
-    },
-    "scenarios/multiplayer/community/lorraine_4p/lorraine_4p": {
-      "width": 448.0,
-      "height": 448.0
-    },
-    "scenarios/multiplayer/community/oasis_depot_8p/oasis_depot_8p": {
-      "width": 576.0,
-      "height": 576.0
-    },
-    "scenarios/multiplayer/community/oliveto_citra_8p/oliveto_citra_8p": {
-      "width": 512.0,
-      "height": 640.0
-    },
-    "scenarios/multiplayer/community/red_ball_express_8p/red_ball_express_8p": {
-      "width": 576.0,
-      "height": 384.0
-    },
-    "scenarios/multiplayer/community/santuario_4p/santuario_4p": {
-      "width": 608.0,
-      "height": 576.0
-    },
-    "scenarios/multiplayer/community/steppe_8p/steppe_8p": {
-      "width": 544.0,
-      "height": 544.0
-    },
-    "scenarios/multiplayer/community/tuscan_vineyard_2p/tuscan_vineyard_2p": {
-      "width": 352.0,
-      "height": 352.0
-    },
-    "scenarios/multiplayer/community/wadi_darnah_4p/wadi_darnah_4p": {
-      "width": 512.0,
-      "height": 384.0
-    },
-    "scenarios/multiplayer/crossing_in_the_woods_2p/crossing_in_the_woods_2p": {
-      "width": 320.0,
-      "height": 320.0
-    },
-    "scenarios/multiplayer/crossing_in_the_woods_4p/crossing_in_the_woods_4p": {
-      "width": 352.0,
-      "height": 368.0
-    },
-    "scenarios/multiplayer/day_101_4p/day_101_4p": {
-      "width": 448.0,
-      "height": 448.0
-    },
-    "scenarios/multiplayer/desert_airfield_6p_mkii/desert_airfield_6p_mkii": {
-      "width": 480.0,
-      "height": 480.0
-    },
-    "scenarios/multiplayer/desert_village_2p_mkiii/desert_village_2p_mkiii": {
-      "width": 384.0,
-      "height": 384.0
-    },
-    "scenarios/multiplayer/elst_outskirts_4p/elst_outskirts_4p": {
-      "width": 512.0,
-      "height": 512.0
-    },
-    "scenarios/multiplayer/foggia_airfield_6p/foggia_airfield_6p": {
-      "width": 544.0,
-      "height": 512.0
-    },
-    "scenarios/multiplayer/gabes_gap_6p/gabes_gap_6p": {
-      "width": 480.0,
-      "height": 480.0
-    },
-    "scenarios/multiplayer/gardens_2p/gardens_2p": {
-      "width": 384.0,
-      "height": 320.0
-    },
-    "scenarios/multiplayer/gardens_2p/gardens_defend_01/gardens_defend_01": {
-      "width": 384.0,
-      "height": 320.0
-    },
-    "scenarios/multiplayer/hill_400_8p/hill_400_8p": {
-      "width": 512.0,
-      "height": 512.0
-    },
-    "scenarios/multiplayer/hoff/hoff_city/hoff_city": {
-      "width": 544.0,
-      "height": 400.0
-    },
-    "scenarios/multiplayer/hoff/hoff_dam/hoff_dam": {
-      "width": 512.0,
-      "height": 512.0
-    },
-    "scenarios/multiplayer/hoff/hoff_desert/hoff_desert": {
-      "width": 544.0,
-      "height": 512.0
-    },
-    "scenarios/multiplayer/hoff/hoff_elst_outskirts_4p/hoff_elst_outskirts_4p": {
-      "width": 512.0,
-      "height": 512.0
-    },
-    "scenarios/multiplayer/hoff/hoff_forest/hoff_forest": {
-      "width": 352.0,
-      "height": 480.0
-    },
-    "scenarios/multiplayer/hoff/hoff_forest_2/hoff_forest_2": {
-      "width": 512.0,
-      "height": 512.0
-    },
-    "scenarios/multiplayer/hoff/hoff_gela_outskirts/hoff_gela_outskirts": {
-      "width": 352.0,
-      "height": 480.0
-    },
-    "scenarios/multiplayer/hoff/hoff_sousse_wetlands/hoff_sousse_wetlands": {
-      "width": 384.0,
-      "height": 544.0
-    },
-    "scenarios/multiplayer/hoff/hoff_torrente/hoff_torrente": {
-      "width": 384.0,
-      "height": 544.0
-    },
-    "scenarios/multiplayer/industrial_railyard_6p_mkii/industrial_railyard_6p_mkii": {
-      "width": 480.0,
-      "height": 416.0
-    },
-    "scenarios/multiplayer/langres_2p/langres_2p": {
-      "width": 320.0,
-      "height": 320.0
-    },
-    "scenarios/multiplayer/longstop_hill_6p/longstop_hill_6p": {
-      "width": 480.0,
-      "height": 480.0
-    },
-    "scenarios/multiplayer/mignano_6p/mignano_6p": {
-      "width": 512.0,
-      "height": 480.0
-    },
-    "scenarios/multiplayer/monte_cavo_8p/monte_cavo_8p/monte_cavo_8p": {
-      "width": 544.0,
-      "height": 544.0
-    },
-    "scenarios/multiplayer/montherme_6p/montherme_6p": {
-      "width": 576.0,
-      "height": 512.0
-    },
-    "scenarios/multiplayer/mountain_ruins_6p/mountain_ruins_6p": {
-      "width": 544.0,
-      "height": 544.0
-    },
-    "scenarios/multiplayer/mountain_ruins_8p_mkii/mountain_ruins_8p_mkii": {
-      "width": 544.0,
-      "height": 544.0
-    },
-    "scenarios/multiplayer/pachino_2p/pachino_2p": {
-      "width": 448.0,
-      "height": 416.0
-    },
-    "scenarios/multiplayer/pisa_central_4p/pisa_central_4p": {
-      "width": 416.0,
-      "height": 416.0
-    },
-    "scenarios/multiplayer/pisa_centrale_4p/pisa_centrale_4p": {
-      "width": 416.0,
-      "height": 416.0
-    },
-    "scenarios/multiplayer/powderkeg_8p/powderkeg_8p": {
-      "width": 576.0,
-      "height": 576.0
-    },
-    "scenarios/multiplayer/primosole_4p/primosole_4p": {
-      "width": 448.0,
-      "height": 448.0
-    },
-    "scenarios/multiplayer/primosole_6p/primosole_6p": {
-      "width": 448.0,
-      "height": 448.0
-    },
-    "scenarios/multiplayer/rails_and_sand_4p/rails_and_sand_4p": {
-      "width": 416.0,
-      "height": 416.0
-    },
-    "scenarios/multiplayer/rails_and_sand_4p/rails_and_sand_4p_video/rails_and_sand_4p_video": {
-      "width": 416.0,
-      "height": 416.0
-    },
-    "scenarios/multiplayer/rapido_river_8p/rapido_river_8p": {
-      "width": 672.0,
-      "height": 480.0
-    },
-    "scenarios/multiplayer/rural_castle_4p/rural_castle_4p": {
-      "width": 416.0,
-      "height": 512.0
-    },
-    "scenarios/multiplayer/rural_town_4p/rural_town_4p": {
-      "width": 448.0,
-      "height": 416.0
-    },
-    "scenarios/multiplayer/sangro_river_crossing_6p/sangro_river_crossing_6p": {
-      "width": 448.0,
-      "height": 448.0
-    },
-    "scenarios/multiplayer/sedjenane_6p/sedjenane_6p": {
-      "width": 480.0,
-      "height": 448.0
-    },
-    "scenarios/multiplayer/semois_2p/semois_2p": {
-      "width": 480.0,
-      "height": 480.0
-    },
-    "scenarios/multiplayer/semois_4p/semois_4p": {
-      "width": 480.0,
-      "height": 480.0
-    },
-    "scenarios/multiplayer/sousse_stronghold_8p/sousse_stronghold_8p": {
-      "width": 544.0,
-      "height": 544.0
-    },
-    "scenarios/multiplayer/sousse_wetlands_8p/sousse_wetlands_8p": {
-      "width": 544.0,
-      "height": 544.0
-    },
-    "scenarios/multiplayer/torrente_4p_mkiii/torrente_4p_mkiii": {
-      "width": 384.0,
-      "height": 544.0
-    },
-    "scenarios/multiplayer/twin_beach_2p_mkii/twin_beach_2p_mkii": {
-      "width": 384.0,
-      "height": 384.0
-    },
-    "scenarios/multiplayer/twin_beach_2p_mkii/twin_beach_defend_01/twin_beach_defend_01": {
-      "width": 384.0,
-      "height": 384.0
-    },
-    "scenarios/multiplayer/villa_fiore_2p_mkii/villa_fiore_2p_mkii": {
-      "width": 384.0,
-      "height": 384.0
-    },
-    "scenarios/multiplayer/vire_river_valley_4p/vire_river_valley_4p": {
-      "width": 416.0,
-      "height": 672.0
-    },
-    "scenarios/multiplayer/winter_line_8p_mkii/winter_line_8p_mkii": {
-      "width": 672.0,
-      "height": 544.0
-    }
+    "scenarios/multiplayer/alamein_4p/alamein_4p": "776bd57c5f6717da",
+    "scenarios/multiplayer/ancona_railyard_2p/ancona_railyard_2p": "df72a35df7a746b9",
+    "scenarios/multiplayer/angoville_farms_2p/angoville_farms_2p": "63d726a061178005",
+    "scenarios/multiplayer/benghazi_6p/benghazi_6p": "89c41e39cc68f0f2",
+    "scenarios/multiplayer/black_gold_8p/black_gold_8p": "dde4d94ee47d42cb",
+    "scenarios/multiplayer/butcher_and_bolt_2p/butcher_and_bolt_2p": "776bd57c5f6717da",
+    "scenarios/multiplayer/catania_crossing_6p/catania_crossing_6p": "b2bf352334d880d8",
+    "scenarios/multiplayer/cliff_crossing_2p/cliff_crossing_2p": "57e57e302446f92e",
+    "scenarios/multiplayer/cliff_crossing_2p/cliff_crossing_2p_video/cliff_crossing_2p_video": "57e57e302446f92e",
+    "scenarios/multiplayer/community/across_the_rhine_6p/across_the_rhine_6p": "a042ec88c96941d7",
+    "scenarios/multiplayer/community/bologna_2p/bologna_2p": "776bd57c5f6717da",
+    "scenarios/multiplayer/community/castello_8p/castello_8p": "d09c79160239813d",
+    "scenarios/multiplayer/community/djebel_2p/djebel_2p": "514549cd58233095",
+    "scenarios/multiplayer/community/djebel_4p/djebel_4p": "514549cd58233095",
+    "scenarios/multiplayer/community/egletons_2p/egletons_2p": "63d726a061178005",
+    "scenarios/multiplayer/community/eindhoven_4p/eindhoven": "776bd57c5f6717da",
+    "scenarios/multiplayer/community/faymonville_2p/faymonville": "df72a35df7a746b9",
+    "scenarios/multiplayer/community/gothic_line_8p/gothic_line_8p": "567c099ff28301a6",
+    "scenarios/multiplayer/community/halfa_8p/halfa_8p": "dd74de8bc2ba87e4",
+    "scenarios/multiplayer/community/lorraine_4p/lorraine_4p": "9da43dc4a4f543c1",
+    "scenarios/multiplayer/community/oasis_depot_8p/oasis_depot_8p": "ce9463b71719d7af",
+    "scenarios/multiplayer/community/oliveto_citra_8p/oliveto_citra_8p": "487688d9a3d3892d",
+    "scenarios/multiplayer/community/red_ball_express_8p/red_ball_express_8p": "88bb16342c158452",
+    "scenarios/multiplayer/community/santuario_4p/santuario_4p": "766a06185bd4033b",
+    "scenarios/multiplayer/community/steppe_8p/steppe_8p": "007f2b2739c67fe8",
+    "scenarios/multiplayer/community/tuscan_vineyard_2p/tuscan_vineyard_2p": "514549cd58233095",
+    "scenarios/multiplayer/community/wadi_darnah_4p/wadi_darnah_4p": "3ce458829be76f31",
+    "scenarios/multiplayer/crossing_in_the_woods_2p/crossing_in_the_woods_2p": "63d726a061178005",
+    "scenarios/multiplayer/crossing_in_the_woods_4p/crossing_in_the_woods_4p": "307bd4d0da76b16a",
+    "scenarios/multiplayer/day_101_4p/day_101_4p": "9da43dc4a4f543c1",
+    "scenarios/multiplayer/desert_airfield_6p_mkii/desert_airfield_6p_mkii": "89c41e39cc68f0f2",
+    "scenarios/multiplayer/desert_village_2p_mkiii/desert_village_2p_mkiii": "df72a35df7a746b9",
+    "scenarios/multiplayer/elst_outskirts_4p/elst_outskirts_4p": "dd74de8bc2ba87e4",
+    "scenarios/multiplayer/foggia_airfield_6p/foggia_airfield_6p": "408eab551c100e62",
+    "scenarios/multiplayer/gabes_gap_6p/gabes_gap_6p": "89c41e39cc68f0f2",
+    "scenarios/multiplayer/gardens_2p/gardens_2p": "0eb4481de8c717c6",
+    "scenarios/multiplayer/gardens_2p/gardens_defend_01/gardens_defend_01": "0eb4481de8c717c6",
+    "scenarios/multiplayer/hill_400_8p/hill_400_8p": "dd74de8bc2ba87e4",
+    "scenarios/multiplayer/hoff/hoff_city/hoff_city": "b2bf352334d880d8",
+    "scenarios/multiplayer/hoff/hoff_dam/hoff_dam": "dd74de8bc2ba87e4",
+    "scenarios/multiplayer/hoff/hoff_desert/hoff_desert": "408eab551c100e62",
+    "scenarios/multiplayer/hoff/hoff_elst_outskirts_4p/hoff_elst_outskirts_4p": "dd74de8bc2ba87e4",
+    "scenarios/multiplayer/hoff/hoff_forest/hoff_forest": "7fb83217ee72dc4b",
+    "scenarios/multiplayer/hoff/hoff_forest_2/hoff_forest_2": "dd74de8bc2ba87e4",
+    "scenarios/multiplayer/hoff/hoff_gela_outskirts/hoff_gela_outskirts": "7fb83217ee72dc4b",
+    "scenarios/multiplayer/hoff/hoff_sousse_wetlands/hoff_sousse_wetlands": "7a2a381b5b63ec7c",
+    "scenarios/multiplayer/hoff/hoff_torrente/hoff_torrente": "7a2a381b5b63ec7c",
+    "scenarios/multiplayer/industrial_railyard_6p_mkii/industrial_railyard_6p_mkii": "b5bf3f51cece3b3a",
+    "scenarios/multiplayer/langres_2p/langres_2p": "63d726a061178005",
+    "scenarios/multiplayer/longstop_hill_6p/longstop_hill_6p": "89c41e39cc68f0f2",
+    "scenarios/multiplayer/mignano_6p/mignano_6p": "b299937d1d217585",
+    "scenarios/multiplayer/monte_cavo_8p/monte_cavo_8p/monte_cavo_8p": "007f2b2739c67fe8",
+    "scenarios/multiplayer/montherme_6p/montherme_6p": "9c42737bac8ae9ff",
+    "scenarios/multiplayer/mountain_ruins_6p/mountain_ruins_6p": "007f2b2739c67fe8",
+    "scenarios/multiplayer/mountain_ruins_8p_mkii/mountain_ruins_8p_mkii": "007f2b2739c67fe8",
+    "scenarios/multiplayer/pachino_2p/pachino_2p": "228e00ed9672d45c",
+    "scenarios/multiplayer/pisa_central_4p/pisa_central_4p": "776bd57c5f6717da",
+    "scenarios/multiplayer/pisa_centrale_4p/pisa_centrale_4p": "776bd57c5f6717da",
+    "scenarios/multiplayer/powderkeg_8p/powderkeg_8p": "ce9463b71719d7af",
+    "scenarios/multiplayer/primosole_4p/primosole_4p": "9da43dc4a4f543c1",
+    "scenarios/multiplayer/primosole_6p/primosole_6p": "9da43dc4a4f543c1",
+    "scenarios/multiplayer/rails_and_sand_4p/rails_and_sand_4p": "776bd57c5f6717da",
+    "scenarios/multiplayer/rails_and_sand_4p/rails_and_sand_4p_video/rails_and_sand_4p_video": "776bd57c5f6717da",
+    "scenarios/multiplayer/rapido_river_8p/rapido_river_8p": "0e7d4804707af1f0",
+    "scenarios/multiplayer/rural_castle_4p/rural_castle_4p": "a76368317a32b554",
+    "scenarios/multiplayer/rural_town_4p/rural_town_4p": "228e00ed9672d45c",
+    "scenarios/multiplayer/sangro_river_crossing_6p/sangro_river_crossing_6p": "9da43dc4a4f543c1",
+    "scenarios/multiplayer/sedjenane_6p/sedjenane_6p": "485bf5fa92779a72",
+    "scenarios/multiplayer/semois_2p/semois_2p": "89c41e39cc68f0f2",
+    "scenarios/multiplayer/semois_4p/semois_4p": "89c41e39cc68f0f2",
+    "scenarios/multiplayer/sousse_stronghold_8p/sousse_stronghold_8p": "007f2b2739c67fe8",
+    "scenarios/multiplayer/sousse_wetlands_8p/sousse_wetlands_8p": "007f2b2739c67fe8",
+    "scenarios/multiplayer/torrente_4p_mkiii/torrente_4p_mkiii": "7a2a381b5b63ec7c",
+    "scenarios/multiplayer/twin_beach_2p_mkii/twin_beach_2p_mkii": "df72a35df7a746b9",
+    "scenarios/multiplayer/twin_beach_2p_mkii/twin_beach_defend_01/twin_beach_defend_01": "df72a35df7a746b9",
+    "scenarios/multiplayer/villa_fiore_2p_mkii/villa_fiore_2p_mkii": "df72a35df7a746b9",
+    "scenarios/multiplayer/vire_river_valley_4p/vire_river_valley_4p": "76efede1839d8953",
+    "scenarios/multiplayer/winter_line_8p_mkii/winter_line_8p_mkii": "dde4d94ee47d42cb"
   }
 }
