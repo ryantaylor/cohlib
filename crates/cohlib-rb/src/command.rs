@@ -87,6 +87,8 @@ pub(crate) fn to_h(ruby: &Ruby, rb_self: &Command) -> RHash {
                 .unwrap();
         }
         CommandPayloadRef::SourcedIndex(data) => {
+            hash.aset(ruby.to_symbol("source"), source_to_h(ruby, data.source()))
+                .unwrap();
             hash.aset(
                 ruby.to_symbol("source_identifier"),
                 data.source_identifier(),
@@ -158,6 +160,8 @@ pub(crate) fn to_h(ruby: &Ruby, rb_self: &Command) -> RHash {
                 data.mod_uuid().map(|u| u.to_string()),
             )
             .unwrap();
+            hash.aset(ruby.to_symbol("source"), source_to_h(ruby, data.source()))
+                .unwrap();
             hash.aset(
                 ruby.to_symbol("source_identifier"),
                 data.source_identifier(),
@@ -179,6 +183,8 @@ pub(crate) fn to_h(ruby: &Ruby, rb_self: &Command) -> RHash {
                 data.mod_uuid().map(|u| u.to_string()),
             )
             .unwrap();
+            hash.aset(ruby.to_symbol("source"), source_to_h(ruby, data.source()))
+                .unwrap();
             hash.aset(
                 ruby.to_symbol("source_identifier"),
                 data.source_identifier(),

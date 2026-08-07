@@ -267,13 +267,13 @@ impl Command {
                     action_type
                 ),
             },
-            ticks::CommandData::SourcedPbgid(blueprint, source_identifier) => match action_type {
+            ticks::CommandData::SourcedPbgid(blueprint, source) => match action_type {
                 CommandType::CMD_BuildSquad => Self::BuildSquad(SourcedPbgid::new(
                     action_type,
                     tick,
                     index,
                     blueprint,
-                    source_identifier,
+                    source,
                     None,
                     None,
                     None,
@@ -284,7 +284,7 @@ impl Command {
                     tick,
                     index,
                     blueprint,
-                    source_identifier,
+                    source,
                     None,
                     None,
                     None,
@@ -307,8 +307,7 @@ impl Command {
                     action_type
                 ),
             },
-            ticks::CommandData::SourcedIndex(source_identifier, queue_index) => match action_type
-            {
+            ticks::CommandData::SourcedIndex(source, queue_index) => match action_type {
                 // SCMD_/PCMD_CancelProduction cancel a queued production item the
                 // same way CMD_CancelProduction does, just issued from a squad's or
                 // the player's UI instead of a building's — same effect, same
@@ -320,7 +319,7 @@ impl Command {
                         action_type,
                         tick,
                         index,
-                        source_identifier,
+                        source,
                         queue_index,
                     ))
                 }
@@ -417,7 +416,7 @@ impl Command {
                     action_type
                 ),
             },
-            ticks::CommandData::SourcedPbgidTargeted(blueprint, source_identifier, targets) => {
+            ticks::CommandData::SourcedPbgidTargeted(blueprint, source, targets) => {
                 match action_type {
                     CommandType::CMD_Ability => {
                         let (position, facing, orientation, entity) = split_targets(targets);
@@ -426,7 +425,7 @@ impl Command {
                             tick,
                             index,
                             blueprint,
-                            source_identifier,
+                            source,
                             position,
                             facing,
                             orientation,
