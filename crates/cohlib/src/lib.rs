@@ -7,8 +7,8 @@ pub use data::{
 pub use error::Error;
 pub use replay::command_data::{
     Ability, BroadcastMessage, CameraCounts, CameraTrack, CommandPayload, Construction, Empty,
-    Orientation, Pbgid, Position, ResourceBonus, Source, SourcePbgid, Sourced, SourcedIndex,
-    SourcedPbgid, Targeted, Unknown,
+    Orientation, Pbgid, Position, ResourceBonus, Source, SourcePbgid, Sourced, SourcedAbility,
+    SourcedIndex, SourcedPbgid, Targeted, Unknown,
 };
 pub use replay::{
     parse_replay, Command, CommandPayloadRef, CommandType, Faction, GameType, Map, MapPoint,

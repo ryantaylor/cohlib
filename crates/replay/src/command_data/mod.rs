@@ -13,6 +13,7 @@ mod resource_bonus;
 mod source;
 mod source_pbgid;
 mod sourced;
+mod sourced_ability;
 mod sourced_index;
 mod sourced_pbgid;
 mod targeted;
@@ -31,6 +32,7 @@ pub use crate::command_data::resource_bonus::ResourceBonus;
 pub use crate::command_data::source::Source;
 pub use crate::command_data::source_pbgid::SourcePbgid;
 pub use crate::command_data::sourced::Sourced;
+pub use crate::command_data::sourced_ability::SourcedAbility;
 pub use crate::command_data::sourced_index::SourcedIndex;
 pub use crate::command_data::sourced_pbgid::SourcedPbgid;
 pub use crate::command_data::targeted::Targeted;
@@ -187,6 +189,21 @@ impl CommandPayload for Ability {
     }
     fn source(&self) -> Option<&Source> {
         Some(Ability::source(self))
+    }
+}
+
+impl CommandPayload for SourcedAbility {
+    fn action_type(&self) -> CommandType {
+        SourcedAbility::action_type(self)
+    }
+    fn tick(&self) -> u32 {
+        SourcedAbility::tick(self)
+    }
+    fn index(&self) -> u32 {
+        SourcedAbility::index(self)
+    }
+    fn pbgid(&self) -> Option<u32> {
+        SourcedAbility::pbgid(self)
     }
 }
 

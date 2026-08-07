@@ -178,7 +178,12 @@ impl<'a> Factory<'a> {
         }
     }
 
-    fn classify_use_ability(&mut self, tick: u32, index: u32, pbgid: u32) -> bool {
+    fn classify_use_ability(&mut self, tick: u32, index: u32, pbgid: Option<u32>) -> bool {
+        // `None` means this command is continuing/updating an already-active ability's
+        // target rather than starting a new one — nothing new to classify.
+        let Some(pbgid) = pbgid else {
+            return true;
+        };
         if let Some(ability) = self.store.get_ability(pbgid, self.version) {
             if ability.autobuild {
                 self.buildings.push(PendingAction {
@@ -490,7 +495,7 @@ mod tests {
         let mut store = VersionedStore::new();
         store.add_version(gd);
         let mut factory = Factory::new(true, 10612, &store);
-        factory.classify_use_ability(10, 0, 100);
+        factory.classify_use_ability(10, 0, Some(100));
         let actions = factory.consolidate();
         assert_eq!(actions[0].kind, BuildActionKind::TrainUnit);
     }

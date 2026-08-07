@@ -41,9 +41,9 @@ fn orientation_to_a(orientation: Orientation) -> Vec<f32> {
     ]
 }
 
-/// The optional targeting block shared by `Targeted`, `Pbgid`, `SourcedPbgid` and
-/// `Ability`. Keys are always written, `nil` when absent, so the key set for a given
-/// `:type` is stable and a columnar schema can be derived from it.
+/// The optional targeting block shared by `Targeted`, `Pbgid`, `SourcedPbgid`,
+/// `SourcedAbility` and `Ability`. Keys are always written, `nil` when absent, so the
+/// key set for a given `:type` is stable and a columnar schema can be derived from it.
 fn aset_targeting(
     ruby: &Ruby,
     hash: RHash,
@@ -78,7 +78,7 @@ pub(crate) fn to_h(ruby: &Ruby, rb_self: &Command) -> RHash {
     hash.aset(ruby.to_symbol("tick"), rb_self.tick()).unwrap();
     hash.aset(ruby.to_symbol("index"), rb_self.index()).unwrap();
 
-    // Twelve arms, not thirty-seven: `Command::payload` discriminates by payload shape,
+    // Thirteen arms, not thirty-seven: `Command::payload` discriminates by payload shape,
     // and the two type tags above already carry the semantic variant.
     match rb_self.payload() {
         CommandPayloadRef::Empty(_) | CommandPayloadRef::Unknown(_) => {}
@@ -152,6 +152,27 @@ pub(crate) fn to_h(ruby: &Ruby, rb_self: &Command) -> RHash {
             );
         }
         CommandPayloadRef::SourcedPbgid(data) => {
+            hash.aset(ruby.to_symbol("pbgid"), data.pbgid()).unwrap();
+            hash.aset(
+                ruby.to_symbol("mod_uuid"),
+                data.mod_uuid().map(|u| u.to_string()),
+            )
+            .unwrap();
+            hash.aset(
+                ruby.to_symbol("source_identifier"),
+                data.source_identifier(),
+            )
+            .unwrap();
+            aset_targeting(
+                ruby,
+                hash,
+                data.position(),
+                data.facing(),
+                data.orientation(),
+                data.entity(),
+            );
+        }
+        CommandPayloadRef::SourcedAbility(data) => {
             hash.aset(ruby.to_symbol("pbgid"), data.pbgid()).unwrap();
             hash.aset(
                 ruby.to_symbol("mod_uuid"),
