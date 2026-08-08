@@ -8,8 +8,8 @@ mod command;
 
 use cohlib::{
     extract_build_order, parse_replay, BuildAction, BuildActionKind, BuildOrder, Command, MapPoint,
-    MapSize, Message, Player, Rect, Replay, ScenarioPoint, Sector, Semver, StartingPosition,
-    VersionedStore,
+    MapSize, Message, Player, Rect, Replay, Scenario, ScenarioPoint, Sector, Semver,
+    StartingPosition, VersionedStore,
 };
 use magnus::{function, method, prelude::*, Error, RArray, RHash, Ruby};
 
@@ -287,14 +287,7 @@ fn sector_to_hash(ruby: &Ruby, sector: &Sector) -> RHash {
     h
 }
 
-fn versioned_store_scenario(
-    ruby: &Ruby,
-    rb_self: &VersionedStore,
-    scenario: String,
-    build: u32,
-) -> Option<RHash> {
-    let s = rb_self.get_scenario(&scenario, build)?;
-
+fn scenario_to_hash(ruby: &Ruby, s: &Scenario) -> RHash {
     let h = ruby.hash_new();
     h.aset(ruby.to_symbol("size"), map_size_to_array(ruby, &s.size))
         .unwrap();
@@ -332,7 +325,30 @@ fn versioned_store_scenario(
     }
     h.aset(ruby.to_symbol("sectors"), sectors).unwrap();
 
-    Some(h)
+    h
+}
+
+fn versioned_store_scenario(
+    ruby: &Ruby,
+    rb_self: &VersionedStore,
+    scenario: String,
+    build: u32,
+) -> Option<RHash> {
+    let s = rb_self.get_scenario(&scenario, build)?;
+    Some(scenario_to_hash(ruby, s))
+}
+
+// Like `versioned_store_scenario`, but with no version fallback — `nil` unless `build`
+// itself has a scenario record for `scenario`. See `get_scenario_exact`'s doc comment
+// for why callers reach for this over the fallback variant.
+fn versioned_store_scenario_exact(
+    ruby: &Ruby,
+    rb_self: &VersionedStore,
+    scenario: String,
+    build: u32,
+) -> Option<RHash> {
+    let s = rb_self.get_scenario_exact(&scenario, build)?;
+    Some(scenario_to_hash(ruby, s))
 }
 
 fn versioned_store_map_size(
@@ -499,6 +515,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     store_class.define_method("icon_for", method!(versioned_store_icon_for, 2))?;
     store_class.define_method("map_size", method!(versioned_store_map_size, 2))?;
     store_class.define_method("scenario", method!(versioned_store_scenario, 2))?;
+    store_class.define_method("scenario_exact", method!(versioned_store_scenario_exact, 2))?;
     store_class.define_method("checksums_for", method!(versioned_store_checksums_for, 1))?;
     store_class.define_method("semver_for", method!(versioned_store_semver_for, 1))?;
     store_class.define_method(
