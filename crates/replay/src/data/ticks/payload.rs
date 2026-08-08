@@ -42,12 +42,16 @@ pub(crate) fn parse_header(input: Span) -> ParserResult<Span> {
 /// alongside the other public command payload shapes).
 impl Source {
     /// Parses a source field. Scalar sources (player/entity/squad) are a tag byte
-    /// followed by a big-endian 24-bit id; list sources (tag `0x40..=0x7F`, count in
-    /// the low 6 bits, `0x40` meaning an empty list — seen on the sourceless DCMD
-    /// camera commands) are a tag byte followed by that many little-endian `u32`
-    /// entries, each independently encoding `(tag << 24) | id`. Panics on an
-    /// unrecognized tag — see module docs on why unexpected input panics rather than
-    /// degrading to `Unknown`.
+    /// followed by a big-endian 24-bit id; list sources are a tag byte followed by
+    /// that many little-endian `u32` entries, each independently encoding
+    /// `(tag << 24) | id`. The count is inline in the tag's low 6 bits for
+    /// `0x40..=0x7F` (`0x40` meaning an empty list — seen on the sourceless DCMD
+    /// camera commands), or, for selections too large to fit 6 bits, an extended
+    /// 14-bit count for `0x80..=0xBF`: the low 6 bits of the tag and the following
+    /// byte, big-endian — the same two-byte escape `ParamBlock` uses for its own
+    /// length prefix. Only seen so far from mods that lift the (vanilla) 63-squad
+    /// selection cap. Panics on an unrecognized tag — see module docs on why
+    /// unexpected input panics rather than degrading to `Unknown`.
     #[tracable_parser]
     pub(crate) fn parse(input: Span) -> ParserResult<Source> {
         let (_, tag) = peek(le_u8)(input)?;
@@ -61,6 +65,13 @@ impl Source {
                     Source::Squads(entries.into_iter().map(|v| v & 0x00FF_FFFF).collect())
                 },
             )(input),
+            t if (0x80..=0xBF).contains(&t) => {
+                let (input, (_, low)) = tuple((le_u8, le_u8))(input)?;
+                let len = (((t & 0x3F) as usize) << 8) | low as usize;
+                map(count(le_u32, len), |entries| {
+                    Source::Squads(entries.into_iter().map(|v| v & 0x00FF_FFFF).collect())
+                })(input)
+            }
             other => panic!("unrecognized command source tag 0x{other:02x}"),
         }
     }

@@ -256,6 +256,39 @@ fn cancel_construction_decodes_a_multi_squad_source() {
     );
 }
 
+/// A selection large enough to overflow the inline 6-bit squad list count (max 63)
+/// falls back to an extended 14-bit count, seen in a modded replay (build 46673)
+/// whose mod lifts the vanilla selection cap (selections up to 144 squads seen).
+/// Asserting the exact largest count (rather than just "more than 63") pins the
+/// extended-count decoding itself — a plain `Source::Squads` match would also pass
+/// if the length were misread.
+#[test]
+fn oversized_squad_selection_decodes_an_extended_source_count() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("replays")
+        .join("v46673_extended_squad_selection.rec");
+    let replay = parse_fixture(&path);
+
+    let largest_selection = replay
+        .players()
+        .iter()
+        .flat_map(|player| player.commands())
+        .filter_map(|command| match command {
+            Command::Attack(data) => match data.source() {
+                Source::Squads(ids) => Some(ids.len()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .max();
+
+    assert_eq!(
+        largest_selection,
+        Some(144),
+        "expected an Attack command with a 144-squad extended-count source"
+    );
+}
+
 /// Camera telemetry records (`DCMD_CameraTrack`/`DCMD_COUNT`) are not player commands:
 /// they must never appear in `Player::commands()` (as `Command::Unknown` or otherwise),
 /// and `Player::camera_tracks()`/`Player::camera_counts()` must actually be populated
