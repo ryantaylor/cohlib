@@ -568,6 +568,24 @@ impl VersionedStore {
         self.scenario_data.get(hash)
     }
 
+    /// Returns the full [`Scenario`] record for `scenario` at exactly `build` — no
+    /// version fallback. `None` if `build` has no `GameData` of its own, or that
+    /// `GameData` has no scenario key for `scenario`.
+    ///
+    /// Use this over [`get_scenario`](Self::get_scenario) when a stale-build fallback
+    /// would be actively wrong rather than merely absent — e.g. placing sector borders
+    /// or point tiers from an older import of a map that's since been re-territoried.
+    /// The returned record can still be a size-only one (empty `points`/`sectors`) if
+    /// `build` was imported before rich scenario extraction existed; callers that need
+    /// to distinguish that from "no record" should check `points`/`sectors` themselves.
+    pub fn get_scenario_exact(&self, scenario: &str, build: Version) -> Option<&Scenario> {
+        let key = normalize_scenario(scenario);
+        let idx = self.versions.partition_point(|g| g.version < build);
+        let gd = self.versions.get(idx).filter(|g| g.version == build)?;
+        let hash = gd.scenarios.get(&key)?;
+        self.scenario_data.get(hash)
+    }
+
     /// Returns the [`MapSize`] for `scenario` at `build`, with version fallback.
     /// Shorthand for `get_scenario(...).map(|s| &s.size)` — see [`get_scenario`](Self::get_scenario).
     pub fn get_map_size(&self, scenario: &str, build: Version) -> Option<&MapSize> {
@@ -975,6 +993,84 @@ mod tests {
     fn empty_store_returns_none() {
         let store = VersionedStore::new();
         assert_eq!(store.get_entity(1, 100), None);
+    }
+
+    fn make_scenario(width: f32) -> Scenario {
+        Scenario {
+            size: MapSize {
+                width,
+                height: width,
+            },
+            playable_area: None,
+            max_players: 2,
+            teams: [1, 1],
+            author: String::new(),
+            name_loc_id: 0,
+            description_loc_id: 0,
+            scenario_type: 0,
+            map_origin: 0,
+            visible_in_lobby: true,
+            points: vec![],
+            sectors: vec![],
+        }
+    }
+
+    fn add_scenario_key(gd: &mut GameData, key: &str, hash: &str) {
+        gd.scenarios.insert(key.to_string(), hash.to_string());
+    }
+
+    #[test]
+    fn get_scenario_exact_matches_only_the_named_build() {
+        let mut store = VersionedStore::new();
+        let mut gd = make_gd(100, 1, 10, LocaleStore(BTreeMap::new()));
+        add_scenario_key(&mut gd, "scenarios/multiplayer/test_map/test_map", "hash1");
+        store.add_version(gd);
+        store.add_scenario("hash1", make_scenario(512.0));
+
+        // Exact build has a scenario key -> found, with no fallback needed.
+        assert_eq!(
+            store
+                .get_scenario_exact("data:scenarios\\multiplayer\\test_map\\test_map", 100)
+                .map(|s| s.size.width),
+            Some(512.0)
+        );
+    }
+
+    #[test]
+    fn get_scenario_exact_does_not_fall_back_to_older_or_newer_builds() {
+        let mut store = VersionedStore::new();
+        let mut gd100 = make_gd(100, 1, 10, LocaleStore(BTreeMap::new()));
+        add_scenario_key(
+            &mut gd100,
+            "scenarios/multiplayer/test_map/test_map",
+            "hash1",
+        );
+        store.add_version(gd100);
+        store.add_scenario("hash1", make_scenario(512.0));
+        // Build 200 exists but has no scenario key of its own — get_scenario would
+        // fall back to 100's record; get_scenario_exact must not.
+        store.add_version(make_gd(200, 1, 20, LocaleStore(BTreeMap::new())));
+
+        let key = "data:scenarios\\multiplayer\\test_map\\test_map";
+        assert_eq!(
+            store.get_scenario(key, 200).map(|s| s.size.width),
+            Some(512.0)
+        );
+        assert_eq!(store.get_scenario_exact(key, 200), None);
+        // No GameData at all for build 300.
+        assert_eq!(store.get_scenario_exact(key, 300), None);
+    }
+
+    #[test]
+    fn get_scenario_exact_none_when_build_has_no_scenario_key() {
+        let mut store = VersionedStore::new();
+        // Build exists (size-only import, before rich extraction existed for it)
+        // but never got a scenario key written for this map.
+        store.add_version(make_gd(100, 1, 10, LocaleStore(BTreeMap::new())));
+        assert_eq!(
+            store.get_scenario_exact("data:scenarios\\multiplayer\\test_map\\test_map", 100),
+            None
+        );
     }
 
     #[test]
