@@ -293,6 +293,38 @@ fn parse_player_starting_positions() {
 }
 
 #[test]
+fn parse_player_id() {
+    let data = include_bytes!("../replays/startpos_8p.rec");
+    let replay = Replay::from_bytes(data).unwrap();
+    let players = replay.players();
+
+    // Distinct per player, and matches the invariant player_from_data relies on internally to
+    // attach each player's own starting position (see StartingPosition::index's doc comment).
+    let mut ids: Vec<u32> = players.iter().map(|player| player.id()).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), players.len());
+
+    assert!(players
+        .iter()
+        .all(|player| player.starting_position().unwrap().index() == player.id()));
+}
+
+#[test]
+fn parse_player_id_ai() {
+    let data = include_bytes!("../replays/vs_ai.rec");
+    let replay = Replay::from_bytes(data).unwrap();
+    let players = replay.players();
+
+    // AI have no profile_id, but id is present regardless of human/AI status.
+    assert_eq!(players.len(), 2);
+    let mut ids: Vec<u32> = players.iter().map(|player| player.id()).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), players.len());
+}
+
+#[test]
 fn parse_starting_positions_other_shapes() {
     let data = include_bytes!("../replays/one_seven_zero.rec");
     assert_eq!(

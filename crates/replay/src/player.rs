@@ -17,6 +17,7 @@ use std::fmt::{Display, Formatter};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "magnus", magnus::wrap(class = "CohLib::Player"))]
 pub struct Player {
+    id: u32,
     name: String,
     human: bool,
     faction: Faction,
@@ -34,6 +35,15 @@ pub struct Player {
 }
 
 impl Player {
+    /// The player's slot identifier as recorded in the replay file itself. Stable across every
+    /// command/camera stream and starting position in this replay, including for AI (unlike
+    /// `Player::profile_id`, which AI never have) -- this is the same identifier cohlib uses
+    /// internally to attach `Player::commands`, `Player::camera_tracks`, `Player::camera_counts`
+    /// and `Player::starting_position` to this player. Not a cross-replay identity: the same
+    /// person's `id` can differ between two different replay files.
+    pub fn id(&self) -> u32 {
+        self.id
+    }
     /// Name of the player at the time the replay was recorded. Note that the player may have
     /// changed their name since time of recording. If attempting to uniquely identify players
     /// across replay files, look at `Player::steam_id` and `Player::profile_id` instead. The string
@@ -156,6 +166,7 @@ pub(crate) fn player_from_data(
     starting_positions: &[StartingPosition],
 ) -> Player {
     let mut player = Player {
+        id: player_data.id,
         name: player_data.name.clone(),
         human: player_data.human != 0,
         faction: Faction::try_from(player_data.faction.as_ref()).unwrap(),

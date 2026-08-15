@@ -432,6 +432,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
 
     // CohLib::Player
     let player_class = module.define_class("Player", ruby.class_object())?;
+    player_class.define_method("id", method!(Player::id, 0))?;
     player_class.define_method("name", method!(Player::name, 0))?;
     player_class.define_method("human?", method!(Player::human, 0))?;
     player_class.define_method("faction", method!(player_faction, 0))?;
