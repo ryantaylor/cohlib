@@ -17,7 +17,11 @@ use uuid::Uuid;
 /// pull more information from replay files over time.
 
 #[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "magnus", magnus::wrap(class = "CohLib::Replay"))]
+#[cfg_attr(feature = "magnus", derive(magnus::TypedData))]
+#[cfg_attr(
+    feature = "magnus",
+    magnus(class = "CohLib::Replay", size, free_immediately)
+)]
 pub struct Replay {
     version: u16,
     timestamp: String,
@@ -27,6 +31,25 @@ pub struct Replay {
     map: Map,
     players: Vec<Player>,
     length: usize,
+}
+
+// See the matching comment on `Player`'s DataTypeFunctions impl -- `players()` clones the whole
+// Vec<Player> (each already holding its own commands/camera_tracks/camera_counts) on every call,
+// and the default size_of_val-based size() is blind to nearly all of it. Delegates to each
+// Player's own size() rather than re-deriving the formula here.
+#[cfg(feature = "magnus")]
+impl magnus::DataTypeFunctions for Replay {
+    fn size(&self) -> usize {
+        use magnus::DataTypeFunctions;
+
+        std::mem::size_of::<Self>()
+            + self.timestamp.capacity()
+            + self
+                .players
+                .iter()
+                .map(DataTypeFunctions::size)
+                .sum::<usize>()
+    }
 }
 
 impl Replay {

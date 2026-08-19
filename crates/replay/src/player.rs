@@ -15,7 +15,11 @@ use std::fmt::{Display, Formatter};
 /// specific to the replay being parsed.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "magnus", magnus::wrap(class = "CohLib::Player"))]
+#[cfg_attr(feature = "magnus", derive(magnus::TypedData))]
+#[cfg_attr(
+    feature = "magnus",
+    magnus(class = "CohLib::Player", size, free_immediately)
+)]
 pub struct Player {
     id: u32,
     name: String,
@@ -32,6 +36,27 @@ pub struct Player {
     camera_tracks: Vec<CameraTrack>,
     camera_counts: Vec<CameraCounts>,
     starting_position: Option<StartingPosition>,
+}
+
+// Every accessor below that returns an owned Vec (commands, camera_tracks, ...) clones this
+// struct's contents on every call, since Magnus's wrapped-value model has no way to hand Ruby a
+// borrowed reference into it. The default DataTypeFunctions::size (std::mem::size_of_val) only
+// sees this struct's own stack layout -- a few hundred bytes -- and is blind to the megabytes a
+// commands/camera_tracks/camera_counts Vec actually holds, so Ruby's GC never learns a Player is
+// expensive and won't collect one proactively. A caller that re-fetches players (or their
+// commands/tracks/counts) in a loop -- e.g. filtering rows player-by-player instead of grouping
+// once -- can push resident memory into the gigabytes before GC catches up. This reports the real
+// cost so Ruby collects eagerly under that pattern instead of relying on caller discipline alone.
+#[cfg(feature = "magnus")]
+impl magnus::DataTypeFunctions for Player {
+    fn size(&self) -> usize {
+        std::mem::size_of::<Self>()
+            + self.name.capacity()
+            + self.messages.capacity() * std::mem::size_of::<Message>()
+            + self.commands.capacity() * std::mem::size_of::<Command>()
+            + self.camera_tracks.capacity() * std::mem::size_of::<CameraTrack>()
+            + self.camera_counts.capacity() * std::mem::size_of::<CameraCounts>()
+    }
 }
 
 impl Player {
