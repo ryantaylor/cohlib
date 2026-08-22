@@ -1,21 +1,24 @@
-use crate::command_data::{Orientation, Position};
+use crate::command_data::{Orientation, Position, Source};
 use crate::command_type::CommandType;
 use crate::data::ticks::value::Blueprint;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// A command format with an entity pbgid and a source identifier, and optionally
-/// targeting fields (position, facing, orientation, target entity) for the handful of
-/// command types whose payload carries them — `None` for commands whose payload
-/// doesn't.
+/// A command format with an entity pbgid and a source, and optionally targeting fields
+/// (position, facing, orientation, target entity) for the handful of command types
+/// whose payload carries them — `None` for commands whose payload doesn't. Carries both
+/// the full `Source` and the legacy truncated `u16` identifier this crate has exposed
+/// for these command types since before `Source` existed — new code should prefer
+/// `Self::source`.
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourcedPbgid {
     action_type: CommandType,
     tick: u32,
     index: u32,
     pbgid: u32,
     mod_uuid: Option<Uuid>,
+    source: Source,
     source_identifier: u16,
     position: Option<Position>,
     facing: Option<f32>,
@@ -30,18 +33,20 @@ impl SourcedPbgid {
         tick: u32,
         index: u32,
         blueprint: Blueprint,
-        source_identifier: u16,
+        source: Source,
         position: Option<Position>,
         facing: Option<f32>,
         orientation: Option<Orientation>,
         entity: Option<u32>,
     ) -> Self {
+        let source_identifier = source.legacy_identifier();
         Self {
             action_type,
             tick,
             index,
             pbgid: blueprint.pbgid,
             mod_uuid: blueprint.mod_uuid,
+            source,
             source_identifier,
             position,
             facing,
@@ -83,9 +88,14 @@ impl SourcedPbgid {
     pub fn mod_uuid(&self) -> Option<Uuid> {
         self.mod_uuid
     }
+    /// Who or what issued this command.
+    pub fn source(&self) -> &Source {
+        &self.source
+    }
     /// This value corresponds to the internal identifier given by the game engine to the entity
     /// that is the source of the command. If you know the identifier for a given entity, you can
-    /// use this value to link this command to that entity.
+    /// use this value to link this command to that entity. Kept for backward compatibility —
+    /// new code should prefer `Self::source`.
     pub fn source_identifier(&self) -> u16 {
         self.source_identifier
     }

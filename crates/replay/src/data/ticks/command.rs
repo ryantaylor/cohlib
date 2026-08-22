@@ -25,14 +25,19 @@ type CameraTrackFields = (u32, i16, i16, i16, i16, i16, i16, i16);
 pub enum CommandData {
     Empty,
     Pbgid(Blueprint),
-    SourcedPbgid(Blueprint, u16),
+    /// Header, source and a blueprint. Carries the full `Source` — the public
+    /// `SourcedPbgid` derives its legacy truncated `u16` identifier from it, alongside
+    /// the full value, at construction time.
+    SourcedPbgid(Blueprint, Source),
     /// Header and source only, with the full `Source` preserved (unlike `SourcedPbgid`)
     /// since `CMD_CancelConstruction`'s source can legitimately be a multi-squad
     /// selection.
     Sourced(Source),
-    SourcedIndex(u16, u32),
+    /// Header, source, then a queue index. Carries the full `Source`, same as
+    /// `SourcedPbgid`.
+    SourcedIndex(Source, u32),
     /// Header, source and a blueprint, with the full `Source` preserved (unlike
-    /// `SourcedPbgid`, which keeps only the legacy truncated identifier).
+    /// `SourcedPbgid`, which additionally derives the legacy truncated identifier).
     SourcePbgid(Source, Blueprint),
     /// Header, source, and zero or more targeting values (position, facing,
     /// orientation, target entity).
@@ -40,11 +45,11 @@ pub enum CommandData {
     /// A blueprint and zero or more targeting values, with no source (used by
     /// `PCMD_Ability`, whose source is always the issuing player).
     PbgidTargeted(Blueprint, TargetValues),
-    /// `CMD_Ability`'s payload: a legacy source identifier, an optional blueprint
-    /// (absent when this command continues/updates an already-active ability's target
-    /// rather than starting a new one, the same dual shape as `SCMD_Ability` — see
-    /// `Ability`), and zero or more targeting values.
-    SourcedPbgidTargeted(Option<Blueprint>, u16, TargetValues),
+    /// `CMD_Ability`'s payload: the full source, an optional blueprint (absent when
+    /// this command continues/updates an already-active ability's target rather than
+    /// starting a new one, the same dual shape as `SCMD_Ability` — see `Ability`), and
+    /// zero or more targeting values.
+    SourcedPbgidTargeted(Option<Blueprint>, Source, TargetValues),
     /// `SCMD_Ability`'s payload: a source, an optional blueprint (absent when this
     /// command continues/updates an already-active ability's target rather than starting
     /// a new one), and zero or more targeting values.
@@ -92,13 +97,11 @@ impl CommandData {
     }
 
     /// Header, source, then a parameter block whose data begins with a blueprint
-    /// reference, keeping the legacy truncated source identifier.
+    /// reference.
     pub fn parse_sourced_pbgid(input: Span) -> ParserResult<CommandData> {
         map(
             tuple((payload::parse_header, Source::parse, ParamBlock::parse)),
-            |(_, source, block)| {
-                CommandData::SourcedPbgid(expect_blueprint(block), source.legacy_identifier())
-            },
+            |(_, source, block)| CommandData::SourcedPbgid(expect_blueprint(block), source),
         )(input)
     }
 
@@ -132,7 +135,7 @@ impl CommandData {
                     );
                 }
                 let queue_index = payload::expect_u32(block.data);
-                CommandData::SourcedIndex(source.legacy_identifier(), queue_index)
+                CommandData::SourcedIndex(source, queue_index)
             },
         )(input)
     }
@@ -192,8 +195,7 @@ impl CommandData {
         )(input)
     }
 
-    /// Header, source, then a parameter block, preserving the legacy source identifier
-    /// like [`Self::parse_sourced_pbgid`] does. Block kind `0x01` carries only targeting
+    /// Header, source, then a parameter block. Block kind `0x01` carries only targeting
     /// values with no blueprint at all (continuing/updating an already-active ability's
     /// target, the same shape `SCMD_Ability` uses — see [`Self::parse_ability`]); any
     /// other kind is a blueprint-and-targets block (see `parse_blueprint_and_targets`).
@@ -208,7 +210,7 @@ impl CommandData {
                     let (blueprint, targets) = parse_blueprint_and_targets(&block);
                     (Some(blueprint), targets)
                 };
-                CommandData::SourcedPbgidTargeted(blueprint, source.legacy_identifier(), targets)
+                CommandData::SourcedPbgidTargeted(blueprint, source, targets)
             },
         )(input)
     }

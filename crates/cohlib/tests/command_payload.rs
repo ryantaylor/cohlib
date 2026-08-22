@@ -669,6 +669,46 @@ fn source_kind_and_ids_agree_with_the_variant() {
     assert!(checked > 0, "expected at least one command with a source");
 }
 
+/// `BuildSquad`/`BuildGlobalUpgrade`/`UseAbility`/`CancelProduction` used to expose only
+/// a legacy truncated `source_identifier: u16` — `Command::source()` returned `None` for
+/// all of them. They now carry the full `Source` too (alongside the legacy field, kept
+/// for backward compatibility), matching every other sourced variant.
+#[test]
+fn legacy_sourced_variants_now_expose_full_source() {
+    const LEGACY_SOURCED_VARIANTS: &[&str] = &[
+        "BuildSquad",
+        "BuildGlobalUpgrade",
+        "UseAbility",
+        "CancelProduction",
+    ];
+
+    let mut seen: HashMap<&str, usize> = LEGACY_SOURCED_VARIANTS.iter().map(|&v| (v, 0)).collect();
+
+    for path in fixture_paths() {
+        let replay = parse_fixture(&path);
+        for player in replay.players() {
+            for command in player.commands() {
+                let variant = command.variant_name();
+                if let Some(count) = seen.get_mut(variant) {
+                    assert!(
+                        command.source().is_some(),
+                        "expected {variant} to carry a full Source"
+                    );
+                    *count += 1;
+                }
+            }
+        }
+    }
+
+    for variant in LEGACY_SOURCED_VARIANTS {
+        assert!(
+            seen[variant] > 0,
+            "expected {variant} to be observed in the corpus — this test isn't guarding \
+             anything if it isn't"
+        );
+    }
+}
+
 /// Records which variants the fixture corpus actually reaches, so gaps in Ruby-side
 /// `to_h` coverage are visible rather than assumed. Every non-`Unknown` variant is
 /// currently reachable; this fails if a previously-reachable variant regresses (e.g. a

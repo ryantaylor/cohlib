@@ -127,6 +127,9 @@ impl CommandPayload for SourcedPbgid {
     fn pbgid(&self) -> Option<u32> {
         Some(SourcedPbgid::pbgid(self))
     }
+    fn source(&self) -> Option<&Source> {
+        Some(SourcedPbgid::source(self))
+    }
 }
 
 impl CommandPayload for SourcePbgid {
@@ -172,6 +175,9 @@ impl CommandPayload for SourcedIndex {
     fn index(&self) -> u32 {
         SourcedIndex::index(self)
     }
+    fn source(&self) -> Option<&Source> {
+        Some(SourcedIndex::source(self))
+    }
 }
 
 impl CommandPayload for Ability {
@@ -204,6 +210,9 @@ impl CommandPayload for SourcedAbility {
     }
     fn pbgid(&self) -> Option<u32> {
         SourcedAbility::pbgid(self)
+    }
+    fn source(&self) -> Option<&Source> {
+        Some(SourcedAbility::source(self))
     }
 }
 
