@@ -99,8 +99,10 @@ fn parse_cell_grid(data: &[u8]) -> Result<(u32, u32, Vec<u32>), Error> {
         return Err(Error::Scenario("TCEL cell plane truncated".into()));
     }
     let grid = data[8..plane_end]
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect();
     Ok((width, height, grid))
 }
@@ -121,8 +123,10 @@ fn parse_sector_record(data: &[u8], id: u32, width: u32, height: u32) -> Result<
         return Err(Error::Scenario("sector record truncated".into()));
     }
     let neighbors = data[12..neighbors_end]
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect();
     let is_base = u16::from_le_bytes(data[neighbors_end..flag_end].try_into().unwrap()) != 0;
 

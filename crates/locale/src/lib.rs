@@ -211,7 +211,9 @@ fn decode_ucs_bytes(bytes: &[u8]) -> Result<String, Error> {
     if bytes.starts_with(&[0xFF, 0xFE]) {
         // UTF-16 LE: skip BOM, decode pairs
         let utf16: Vec<u16> = bytes[2..]
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
             .collect();
         String::from_utf16(&utf16)
