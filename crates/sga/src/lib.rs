@@ -124,7 +124,9 @@ pub fn read_archive_name(path: &Path) -> Result<String, Error> {
     }
     let name_bytes = &header[12..140];
     let utf16: Vec<u16> = name_bytes
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .take_while(|&w| w != 0)
         .collect();

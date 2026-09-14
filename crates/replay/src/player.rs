@@ -91,10 +91,15 @@ impl Player {
     }
     /// The pbgid of the battlegroup the player selected, or `None` if no battlegroup was selected.
     /// For details on what this ID represents please see `SelectBattlegroup::pbgid`.
+    ///
+    /// Only the player's own pick counts. `Command::SelectBattlegroup` also covers upgrades the
+    /// engine grants on the player's behalf, which can precede the pick -- see
+    /// `is_battlegroup_selection`. Those stay in `Player::commands`.
     pub fn battlegroup(&self) -> Option<u32> {
         self.battlegroup
     }
-    /// The tick at which the player selected their battlegroup, or `None` if no battlegroup was selected.
+    /// The tick at which the player selected their battlegroup, or `None` if no battlegroup was
+    /// selected. Paired with `Player::battlegroup` and subject to the same filtering.
     pub fn battlegroup_selected_at(&self) -> Option<u32> {
         self.battlegroup_selected_at
     }
@@ -181,6 +186,17 @@ impl Player {
     }
 }
 
+/// Whether a command is the player's own battlegroup pick.
+///
+/// `PCMD_InstantUpgrade` grants an upgrade to a player immediately, and choosing a battlegroup is
+/// only one of its uses -- the engine issues the same command to hand out upgrades a battlegroup
+/// node unlocked (free grenades, weapon packages) and, since 2.5.5, a player's Hold Off perk
+/// loadout, which can arrive dozens at a time before the player has picked anything. Engine-issued
+/// commands carry index 0; a player's own input is numbered from 1, so the index separates the two.
+fn is_battlegroup_selection(command: &Command) -> bool {
+    matches!(command, Command::SelectBattlegroup(_)) && command.index() != 0
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn player_from_data(
     player_data: &PlayerData,
@@ -225,7 +241,7 @@ pub(crate) fn player_from_data(
     match player
         .commands
         .iter()
-        .find(|&command| matches!(command, Command::SelectBattlegroup(_)))
+        .find(|&command| is_battlegroup_selection(command))
     {
         Some(Command::SelectBattlegroup(command)) => {
             player.battlegroup = Some(command.pbgid());

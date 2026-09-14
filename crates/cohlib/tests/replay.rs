@@ -1,6 +1,6 @@
 //! Integration tests for the replay module, ported from vault's test suite.
 
-use cohlib::{Faction, GameType, Replay, Team};
+use cohlib::{Command, Faction, GameType, Replay, Team};
 use uuid::{uuid, Uuid};
 
 #[test]
@@ -424,4 +424,30 @@ fn parse_unusual_team_id() {
             Team::Second
         ]
     );
+}
+
+#[test]
+fn parse_battlegroup_ignores_engine_granted_upgrades() {
+    let data = include_bytes!("../replays/v50049_engine_granted_battlegroup_upgrades.rec");
+    let replay = Replay::from_bytes(data).unwrap();
+    let player = &replay.players()[3];
+
+    // This player's Hold Off perk loadout arrives as 40 PCMD_InstantUpgrade commands on tick 150,
+    // long before they pick Airborne on tick 448. The pick is the one that counts.
+    assert_eq!(player.battlegroup(), Some(182327));
+    assert_eq!(player.battlegroup_selected_at(), Some(448));
+
+    // All 45 grants across the match are still reported as commands -- only battlegroup
+    // resolution skips them.
+    let granted = player
+        .commands()
+        .iter()
+        .filter(|command| matches!(command, Command::SelectBattlegroup(_)) && command.index() == 0)
+        .count();
+    assert_eq!(granted, 45);
+
+    // Players with no engine-granted upgrades are unaffected.
+    assert_eq!(replay.players()[1].battlegroup(), Some(2031370));
+    assert_eq!(replay.players()[1].battlegroup_selected_at(), Some(60));
+    assert_eq!(replay.players()[2].battlegroup(), None);
 }
