@@ -67,6 +67,16 @@ fn run(bytes: &[u8]) -> (Vec<String>, Vec<String>) {
 
 // ── USF Airborne build ────────────────────────────────────────────────────────
 
+// Airborne build order: cancellation resolution against this fixture is
+// hand-verified in cohdb's cancellation-detection investigation (see the
+// `Factory::cancel_construction` doc comment) -- the raw command sequence shows a
+// barracks placed, cancelled almost immediately, then re-placed and later confirmed
+// by a rifleman production; a weapon support center placed then cancelled with no
+// other candidate pending; and a triage center placed, cancelled, then re-placed and
+// never touched again. Each cancellation resolves to exactly the right instance with
+// certainty, so the first barracks, the weapon support center, and the first triage
+// center are excluded from the build order entirely rather than merely flagged
+// suspect (`include_cancelled: false` in `run()` above).
 #[test]
 fn usf_airborne_build_generates_correct_build() {
     let bytes = include_bytes!("../replays/usf_airborne_build.rec");
@@ -74,8 +84,6 @@ fn usf_airborne_build_generates_correct_build() {
     let expected = vec![
         "sbps/races/american/infantry/engineer_us",
         "abilities/races/american/auto_build/auto_build_barracks",
-        "abilities/races/american/auto_build/auto_build_barracks",
-        "abilities/races/american/auto_build/auto_build_weapon_support_center",
         "upgrade/american/research/infantry_support_center_us",
         "upgrade/american/battlegroups/airborne/airborne",
         "upgrade/american/battlegroups/airborne/airborne_right_1a_pathfinders_us",
@@ -91,7 +99,6 @@ fn usf_airborne_build_generates_correct_build() {
         "abilities/races/american/battlegroups/airborne/airborne_left_2b_supply_drop_us",
         "abilities/races/american/battlegroups/airborne/airborne_left_3b_carpet_bombing_us",
         "abilities/races/american/auto_build/auto_build_triage_center_us",
-        "abilities/races/american/auto_build/auto_build_triage_center_us",
     ];
     assert_eq!(
         paths, expected,
@@ -99,16 +106,13 @@ fn usf_airborne_build_generates_correct_build() {
     );
 }
 
+// Every previously-"suspect" building in this fixture now resolves to certainty (see
+// the doc comment above) -- none remain merely suspect.
 #[test]
 fn usf_airborne_build_marks_correct_suspects() {
     let bytes = include_bytes!("../replays/usf_airborne_build.rec");
     let (_, suspects) = run(bytes);
-    let mut expected = vec![
-        "abilities/races/american/auto_build/auto_build_barracks",
-        "abilities/races/american/auto_build/auto_build_weapon_support_center",
-        "abilities/races/american/auto_build/auto_build_triage_center_us",
-    ];
-    expected.sort();
+    let expected: Vec<&str> = vec![];
     assert_eq!(
         suspects, expected,
         "suspect mismatch\ngot:      {suspects:#?}\nexpected: {expected:#?}",
@@ -169,6 +173,13 @@ fn usf_armoured_build_marks_correct_suspects() {
 
 // ── USF Advanced Infantry build ───────────────────────────────────────────────
 
+// Both the weapon support center and the triage center in this fixture are placed
+// once, then cancelled with no other pending candidate to compete with -- each
+// resolves to certainty and is excluded from the build order entirely. The
+// battlegroup-built medical tent (`infantry_left_2a_medical_tent`) is a
+// `self.battlegroup` construction, not tracked by the identity resolution above (see
+// `Factory::cancel_construction`), so it's unaffected and remains merely suspect, same
+// as before.
 #[test]
 fn usf_advanced_inf_build_generates_correct_build() {
     let bytes = include_bytes!("../replays/usf_advanced_inf_build.rec");
@@ -177,7 +188,6 @@ fn usf_advanced_inf_build_generates_correct_build() {
         "abilities/races/american/auto_build/auto_build_barracks",
         "upgrade/american/battlegroups/infantry/infantry",
         "upgrade/american/battlegroups/infantry/infantry_left_1_convert_rifleman_to_ranger_us",
-        "abilities/races/american/auto_build/auto_build_weapon_support_center",
         "sbps/races/american/infantry/ranger_us",
         "sbps/races/american/infantry/riflemen_us",
         "upgrade/american/battlegroups/infantry/infantry_left_2a_frontline_medical_tent_us",
@@ -190,7 +200,6 @@ fn usf_advanced_inf_build_generates_correct_build() {
         "upgrade/american/battlegroups/infantry/infantry_right_2_howitzer_105mm_us",
         "upgrade/american/battlegroups/infantry/infantry_right_3a_off_map_artillery_us",
         "abilities/races/american/battlegroups/infantry/infantry_right_3a_off_map_artillery_us",
-        "abilities/races/american/auto_build/auto_build_triage_center_us",
     ];
     assert_eq!(
         paths, expected,
@@ -202,11 +211,7 @@ fn usf_advanced_inf_build_generates_correct_build() {
 fn usf_advanced_inf_build_marks_correct_suspects() {
     let bytes = include_bytes!("../replays/usf_advanced_inf_build.rec");
     let (_, suspects) = run(bytes);
-    let mut expected = vec![
-        "abilities/races/american/auto_build/auto_build_weapon_support_center",
-        "abilities/races/american/battlegroups/infantry/infantry_left_2a_medical_tent",
-        "abilities/races/american/auto_build/auto_build_triage_center_us",
-    ];
+    let mut expected = vec!["abilities/races/american/battlegroups/infantry/infantry_left_2a_medical_tent"];
     expected.sort();
     assert_eq!(
         suspects, expected,

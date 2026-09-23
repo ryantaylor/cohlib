@@ -79,10 +79,13 @@ impl Source {
     /// Reproduces the raw `u16` this crate has always exposed as `source_identifier`
     /// on the handful of command variants that predate this module: the low 16 bits of
     /// the source id, byte-swapped, exactly as it falls out of reading the last two
-    /// bytes of a scalar source field as little-endian. Kept only for backward
-    /// compatibility — new code should match on the `Source` itself instead. Not
-    /// meaningful for `Squads`.
-    pub(crate) fn legacy_identifier(&self) -> u16 {
+    /// bytes of a scalar source field as little-endian. For new code building a
+    /// `Command`, match on the `Source` itself instead -- this exists so a full
+    /// `Source` (e.g. from `CMD_CancelConstruction`) can still be compared for
+    /// identity against a `source_identifier` field on an older command shape, which
+    /// only ever carries this truncated form and has no other representation to
+    /// compare against. Not meaningful for `Squads`.
+    pub fn legacy_identifier(&self) -> u16 {
         let id = match self {
             Source::Player(id) => *id as u32,
             Source::Entity(id) | Source::Squad(id) => *id,

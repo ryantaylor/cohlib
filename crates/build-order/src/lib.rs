@@ -9,6 +9,7 @@ pub use error::Error;
 use std::collections::HashMap;
 
 use data::{Entity, Version, VersionedStore};
+use replay::command_data::Source;
 use replay::{Command, Replay};
 
 /// A single action in the build order.
@@ -97,6 +98,13 @@ struct PendingAction {
     pbgid: u32,
     suspect_since: Option<u32>,
     cancelled: bool,
+    /// The building's own entity/instance id, in the truncated 16-bit form
+    /// `Source::legacy_identifier` produces -- learned the first time any later
+    /// command reveals it (a production it starts, or an entity-sourced command like
+    /// a rally point), so it can be matched against a `CMD_CancelConstruction`'s
+    /// source with certainty instead of by pbgid/chronology alone. Only ever set on
+    /// entries in `Factory::buildings` -- see `Factory::bind_building_identity`.
+    entity: Option<u16>,
 }
 
 impl PendingAction {
@@ -120,6 +128,9 @@ struct Factory<'a> {
     productions: HashMap<u16, Vec<PendingAction>>,
     battlegroup: Vec<PendingAction>,
     takeover: Vec<PendingAction>,
+    /// Confirmed building identities: entity id (legacy 16-bit form) -> index into
+    /// `buildings`. See `bind_building_identity`.
+    building_entities: HashMap<u16, usize>,
 }
 
 impl<'a> Factory<'a> {
@@ -132,14 +143,18 @@ impl<'a> Factory<'a> {
             productions: HashMap::new(),
             battlegroup: Vec::new(),
             takeover: Vec::new(),
+            building_entities: HashMap::new(),
         }
     }
 
     fn classify(&mut self, command: &Command) -> bool {
         match command {
-            Command::UseAbility(data) => {
-                self.classify_use_ability(data.tick(), data.index(), data.pbgid())
-            }
+            Command::UseAbility(data) => self.classify_use_ability(
+                data.tick(),
+                data.index(),
+                data.pbgid(),
+                data.source_identifier(),
+            ),
             Command::BuildSquad(data) => self.push_production(
                 data.tick(),
                 data.index(),
@@ -169,16 +184,53 @@ impl<'a> Factory<'a> {
             Command::UseBattlegroupAbility(data) => {
                 self.classify_use_battlegroup_ability(data.tick(), data.index(), data.pbgid())
             }
-            Command::CancelConstruction(data) => self.cancel_construction(data.tick()),
+            Command::CancelConstruction(data) => {
+                self.cancel_construction(data.tick(), data.source())
+            }
             Command::CancelProduction(data) => {
                 self.cancel_production(data.source_identifier(), data.queue_index())
             }
             Command::AITakeover(data) => self.process_takeover(data.tick()),
+            // Entity-sourced commands that never represent a build-order action
+            // themselves, but reveal an existing building's identity -- see
+            // `bind_building_identity`. Not exhaustive over every entity-sourced
+            // command type; these are the ones a building issues in practice
+            // (validated against real replay data).
+            Command::RallyPoint(data) => {
+                self.bind_from_source(data.source());
+                true
+            }
+            Command::AttackFromHold(data) => {
+                self.bind_from_source(data.source());
+                true
+            }
+            Command::UnloadSquads(data) => {
+                self.bind_from_source(data.source());
+                true
+            }
+            Command::Move(data) => {
+                self.bind_from_source(data.source());
+                true
+            }
             _ => true,
         }
     }
 
-    fn classify_use_ability(&mut self, tick: u32, index: u32, pbgid: Option<u32>) -> bool {
+    /// `bind_building_identity` restricted to `Source::Entity` -- the other `Source`
+    /// kinds (squad(s), player) never name a building.
+    fn bind_from_source(&mut self, source: &Source) {
+        if let Source::Entity(_) = source {
+            self.bind_building_identity(source.legacy_identifier(), None);
+        }
+    }
+
+    fn classify_use_ability(
+        &mut self,
+        tick: u32,
+        index: u32,
+        pbgid: Option<u32>,
+        source_identifier: u16,
+    ) -> bool {
         // `None` means this command is continuing/updating an already-active ability's
         // target rather than starting a new one — nothing new to classify.
         let Some(pbgid) = pbgid else {
@@ -193,6 +245,7 @@ impl<'a> Factory<'a> {
                     pbgid,
                     suspect_since: None,
                     cancelled: false,
+                    entity: None,
                 });
             } else if !ability.spawns.is_empty() {
                 self.buildings.push(PendingAction {
@@ -202,7 +255,12 @@ impl<'a> Factory<'a> {
                     pbgid,
                     suspect_since: None,
                     cancelled: false,
+                    entity: None,
                 });
+                // A non-autobuild ability call (e.g. a call-in/paradrop) is issued
+                // from an existing building the same way BuildSquad is -- what it
+                // produces can identify its source just as reliably.
+                self.bind_building_identity(source_identifier, Some(pbgid));
             } else if !ability.upgrades.is_empty() {
                 self.buildings.push(PendingAction {
                     tick,
@@ -211,7 +269,9 @@ impl<'a> Factory<'a> {
                     pbgid,
                     suspect_since: None,
                     cancelled: false,
+                    entity: None,
                 });
+                self.bind_building_identity(source_identifier, Some(pbgid));
             }
         }
         true
@@ -254,7 +314,11 @@ impl<'a> Factory<'a> {
                 pbgid,
                 suspect_since: None,
                 cancelled: false,
+                entity: None,
             });
+        // What this building just produced identifies it, the same way a rally point
+        // or another entity-sourced command would -- see `bind_building_identity`.
+        self.bind_building_identity(source, Some(pbgid));
         true
     }
 
@@ -272,16 +336,118 @@ impl<'a> Factory<'a> {
             pbgid,
             suspect_since: None,
             cancelled: false,
+            entity: None,
         });
         true
     }
 
-    fn cancel_construction(&mut self, tick: u32) -> bool {
+    /// Binds `id` (a building's entity/instance id, truncated to the legacy 16-bit
+    /// form) to a specific pending action in `self.buildings`, if it isn't already
+    /// known and exactly one candidate matches. `produced_pbgid`, when given,
+    /// restricts candidates to ones whose ability could plausibly have produced it
+    /// (via `produces`) -- without that, two different building types placed close
+    /// together would count as ambiguous with each other, which the pbgid-based
+    /// suspect rectification below never had to worry about. When `produced_pbgid` is
+    /// `None` (an entity-sourced command that doesn't reveal what it produced, or a
+    /// `CancelProduction` that only reveals a queue slot), this narrows purely by
+    /// elimination against whatever else is already known.
+    ///
+    /// Deliberately conservative: if more than one candidate remains, nothing is
+    /// bound rather than guessing -- the caller falls back to today's
+    /// chronology/pbgid-based handling for anything this can't resolve with
+    /// certainty (validated against real replay data; see cohdb's cancellation-
+    /// detection investigation).
+    fn bind_building_identity(&mut self, id: u16, produced_pbgid: Option<u32>) {
+        if self.building_entities.contains_key(&id) {
+            return;
+        }
+        let mut candidates = self
+            .buildings
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.entity.is_none())
+            .filter(|(_, b)| match produced_pbgid {
+                Some(produced) => resolve_building_entity(b.pbgid, self.version, self.store)
+                    .is_some_and(|entity| produces(&entity, produced, self.version, self.store)),
+                None => true,
+            })
+            .map(|(i, _)| i);
+        let Some(only) = candidates.next() else {
+            return;
+        };
+        if candidates.next().is_some() {
+            return;
+        }
+        self.buildings[only].entity = Some(id);
+        self.building_entities.insert(id, only);
+    }
+
+    /// Resolves a `CMD_CancelConstruction`'s source against `self.buildings` with
+    /// certainty when possible: cancels exactly the one identified pending building
+    /// and leaves every other pending building in `self.buildings` untouched, without
+    /// blanket-marking anything suspect. Falls back to today's blanket-suspect
+    /// behavior for `self.buildings` only when identity can't determine which one was
+    /// cancelled -- see `bind_building_identity` for why that's a deliberate,
+    /// validated choice rather than a gap. `self.battlegroup` is untouched here
+    /// either way; see `cancel_construction`, which always blanket-suspects it
+    /// exactly as before, independent of how this resolves.
+    fn cancel_buildings(&mut self, tick: u32, source: &Source) {
+        // `Source::legacy_identifier` panics on `Squads` as a whole value (it's not
+        // meaningful to truncate a *list* to one id), but the same per-element
+        // transform is well-defined -- apply it to each id individually via a
+        // single-element `Source::Entity` rather than duplicating the bit-twiddle.
+        let ids: Vec<u16> = match source {
+            Source::Entity(_) | Source::Squad(_) => vec![source.legacy_identifier()],
+            Source::Squads(ids) => ids
+                .iter()
+                .map(|id| Source::Entity(*id).legacy_identifier())
+                .collect(),
+            Source::Player(_) => Vec::new(),
+        };
+
+        for id in &ids {
+            if let Some(&idx) = self.building_entities.get(id) {
+                self.buildings[idx].cancelled = true;
+                return;
+            }
+        }
+
+        // Id unseen: if exactly one still-unidentified building is pending, it must
+        // be the one -- bind and cancel it with the same certainty as an
+        // already-known id. Otherwise (zero candidates -- likely a squad-built
+        // structure or other construction this classifier doesn't track at all -- or
+        // two-plus genuinely simultaneous candidates) fall through to blanket suspect.
+        let mut candidates = self
+            .buildings
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.entity.is_none() && b.suspect_since.is_none() && !b.cancelled)
+            .map(|(i, _)| i);
+        if let Some(only) = candidates.next() {
+            if candidates.next().is_none() {
+                self.buildings[only].cancelled = true;
+                if let Some(&id) = ids.first() {
+                    self.buildings[only].entity = Some(id);
+                    self.building_entities.insert(id, only);
+                }
+                return;
+            }
+        }
+
         for building in &mut self.buildings {
-            if building.suspect_since.is_none() {
+            if building.entity.is_none() && building.suspect_since.is_none() && !building.cancelled
+            {
                 building.suspect_since = Some(tick);
             }
         }
+    }
+
+    fn cancel_construction(&mut self, tick: u32, source: &Source) -> bool {
+        self.cancel_buildings(tick, source);
+        // Unconditional, exactly as before this change: a battlegroup-built
+        // structure has no identity signal to resolve against at all (see the module
+        // doc on `cancel_buildings`), so it stays on the original blanket-suspect
+        // path regardless of how `self.buildings` resolved.
         for building in &mut self.battlegroup {
             if building.kind == BuildActionKind::ConstructBuilding
                 && building.suspect_since.is_none()
@@ -299,6 +465,9 @@ impl<'a> Factory<'a> {
                 action.cancelled = true;
             }
         }
+        // A cancelled queue slot still proves its building is an active producer --
+        // narrow by elimination the same way a successful production would.
+        self.bind_building_identity(source, None);
         true
     }
 
@@ -313,6 +482,7 @@ impl<'a> Factory<'a> {
             pbgid: 0,
             suspect_since: None,
             cancelled: false,
+            entity: None,
         });
         false
     }
@@ -332,6 +502,25 @@ impl<'a> Factory<'a> {
 
 // ── Suspect rectification ─────────────────────────────────────────────────────
 
+/// Resolves the pbgid of an autobuild/battlegroup ability that constructs a building
+/// (`ability.builds`) to that building's own `Entity` -- the thing whose `spawns`/
+/// `upgrades` lists say what it can produce. Shared by `rectify_suspects` (checking
+/// what a *suspect* building could have produced) and `bind_building_identity`
+/// (checking what an *unresolved, not-yet-suspect* one could have).
+fn resolve_building_entity(
+    ability_pbgid: u32,
+    version: Version,
+    store: &VersionedStore,
+) -> Option<Entity> {
+    store
+        .get_ability(ability_pbgid, version)
+        .and_then(|a| a.builds.as_ref())
+        .and_then(|builds_path| {
+            let target = builds_path.replace('\\', "/");
+            store.get_entity_by_path(&target, version).cloned()
+        })
+}
+
 fn rectify_suspects(actions: &mut [BuildAction], version: Version, store: &VersionedStore) {
     let n = actions.len();
     for i in 0..n {
@@ -340,13 +529,7 @@ fn rectify_suspects(actions: &mut [BuildAction], version: Version, store: &Versi
         }
         let suspect_pbgid = actions[i].pbgid;
 
-        let building_entity: Option<Entity> = store
-            .get_ability(suspect_pbgid, version)
-            .and_then(|a| a.builds.as_ref())
-            .and_then(|builds_path| {
-                let target = builds_path.replace('\\', "/");
-                store.get_entity_by_path(&target, version).cloned()
-            });
+        let building_entity = resolve_building_entity(suspect_pbgid, version, store);
 
         let next_same = actions[(i + 1)..]
             .iter()
@@ -459,8 +642,35 @@ mod tests {
         assert_eq!(actions[2].pbgid, 300);
     }
 
+    // Two pending buildings with no way to identify either -- the cancel's source
+    // can't resolve to one specific building, so both fall back to today's blanket
+    // suspicion, unchanged.
     #[test]
-    fn cancel_construction_marks_buildings_as_suspect() {
+    fn cancel_construction_marks_buildings_as_suspect_when_ambiguous() {
+        let store = VersionedStore::new();
+        let mut factory = Factory::new(true, 10612, &store);
+        for _ in 0..2 {
+            factory.buildings.push(PendingAction {
+                tick: 10,
+                index: 0,
+                kind: BuildActionKind::ConstructBuilding,
+                pbgid: 42,
+                suspect_since: None,
+                cancelled: false,
+                entity: None,
+            });
+        }
+        factory.cancel_construction(20, &Source::Entity(999));
+        assert_eq!(factory.buildings[0].suspect_since, Some(20));
+        assert_eq!(factory.buildings[1].suspect_since, Some(20));
+        assert!(!factory.buildings[0].cancelled);
+        assert!(!factory.buildings[1].cancelled);
+    }
+
+    // Exactly one pending building and no other information -- it must be the one,
+    // so it's cancelled with certainty rather than merely marked suspect.
+    #[test]
+    fn cancel_construction_cancels_the_sole_pending_building() {
         let store = VersionedStore::new();
         let mut factory = Factory::new(true, 10612, &store);
         factory.buildings.push(PendingAction {
@@ -470,9 +680,48 @@ mod tests {
             pbgid: 42,
             suspect_since: None,
             cancelled: false,
+            entity: None,
         });
-        factory.cancel_construction(20);
-        assert_eq!(factory.buildings[0].suspect_since, Some(20));
+        factory.cancel_construction(20, &Source::Entity(999));
+        assert!(factory.buildings[0].cancelled);
+        assert_eq!(factory.buildings[0].suspect_since, None);
+    }
+
+    // The cancelled building already revealed its identity (e.g. it had produced
+    // something) before being cancelled -- resolves to exactly that one even with a
+    // second, unrelated building still pending.
+    #[test]
+    fn cancel_construction_cancels_only_the_identified_building() {
+        let store = VersionedStore::new();
+        let mut factory = Factory::new(true, 10612, &store);
+        factory.buildings.push(PendingAction {
+            tick: 10,
+            index: 0,
+            kind: BuildActionKind::ConstructBuilding,
+            pbgid: 42,
+            suspect_since: None,
+            cancelled: false,
+            entity: None,
+        });
+        factory.buildings.push(PendingAction {
+            tick: 15,
+            index: 1,
+            kind: BuildActionKind::ConstructBuilding,
+            pbgid: 43,
+            suspect_since: None,
+            cancelled: false,
+            entity: None,
+        });
+        factory
+            .building_entities
+            .insert(Source::Entity(999).legacy_identifier(), 0);
+        factory.buildings[0].entity = Some(Source::Entity(999).legacy_identifier());
+
+        factory.cancel_construction(20, &Source::Entity(999));
+
+        assert!(factory.buildings[0].cancelled);
+        assert!(!factory.buildings[1].cancelled);
+        assert_eq!(factory.buildings[1].suspect_since, None);
     }
 
     #[test]
@@ -495,7 +744,7 @@ mod tests {
         let mut store = VersionedStore::new();
         store.add_version(gd);
         let mut factory = Factory::new(true, 10612, &store);
-        factory.classify_use_ability(10, 0, Some(100));
+        factory.classify_use_ability(10, 0, Some(100), 0);
         let actions = factory.consolidate();
         assert_eq!(actions[0].kind, BuildActionKind::TrainUnit);
     }
