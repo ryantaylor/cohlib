@@ -125,6 +125,8 @@ Maintainer tooling only — not needed for library use.
 
 - `cohlib populate <source_dirs>... --output <data_dir>` — import from cohdata/reinforce JSON directories
 - `cohlib import <depot_path> --version <build> --output <data_dir> [--images <dir>] [--icons-sga <path>] [--scenarios-sga <path>]` — extract from CoH3 SGA depot. `--scenarios-sga` defaults to `<depot_path>/anvil/archives/ScenariosMP.sga` and, if found, extracts full `Scenario` records via `scenario::extract_scenarios` and writes them to `<output_dir>/scenarios/`.
+- `cohlib grid <depot_path> --output <dir>` — terrain grid extraction (see "Terrain grids" above).
+- `cohlib backfill <build> --manifest <id> --output <data_dir> [--module-manifest <id>] [...]` — pulls one historical build's depot files via `DepotDownloader` (regex-filtered to exactly what the extraction pipeline reads, discovered dynamically from `RelicGame.module`'s `syncChecked` sections plus a fixed direct-read list) and runs `import`+`grid` against them. Built and unit-tested without ever running against a real historical manifest — see `crates/cli/src/backfill.rs`'s module doc comment for the open questions before trusting its output.
 - `discover` — developer binary for inspecting raw SGA archive contents
 
 **Sample depot** (local Steam installation, SGA archives):

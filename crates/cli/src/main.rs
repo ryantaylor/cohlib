@@ -3,15 +3,17 @@
 use std::{
     path::{Path, PathBuf},
     process,
-    time::Duration,
 };
 
 use cohlib::{extract_build_order, Replay, VersionedStore};
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressStyle;
 
+mod backfill;
 mod checksums;
+mod depot;
 mod grid;
 mod images;
+mod import;
 mod semver;
 
 fn spinner_style() -> ProgressStyle {
@@ -34,6 +36,7 @@ fn main() {
         Some("sort-data") => cmd_sort_data(&args[2..]),
         Some("build-order") => cmd_build_order(&args[2..]),
         Some("grid") => cmd_grid(&args[2..]),
+        Some("backfill") => cmd_backfill(&args[2..]),
         _ => {
             eprintln!("Usage:");
             eprintln!("  cohlib populate <source_dir>... --output <data_dir>");
@@ -41,6 +44,12 @@ fn main() {
             eprintln!("  cohlib sort-data <data_dir>");
             eprintln!("  cohlib build-order <replay_path>");
             eprintln!("  cohlib grid <depot_path> --output <dir>");
+            eprintln!(
+                "  cohlib backfill <build_number> --manifest <id> --output <data_dir> \
+                 [--module-manifest <id>] [--workdir <dir>] [--images <dir>] \
+                 [--depotdownloader <path>] [--username <user>] [--app <id>] \
+                 [--depot <id>] [--module-depot <id>]"
+            );
             process::exit(1);
         }
     }
@@ -154,143 +163,15 @@ fn cmd_import(args: &[String]) {
     let (depot_path, version, output_dir, images_config, scenarios_sga_path) =
         parse_import_args(args);
 
-    let attrib_sga = depot_path
-        .join("anvil")
-        .join("archives")
-        .join("ReferenceAttributes.sga");
-
-    if !attrib_sga.exists() {
-        eprintln!(
-            "error: ReferenceAttributes.sga not found at {}",
-            attrib_sga.display()
-        );
+    if let Err(e) = import::run_import(
+        &depot_path,
+        version,
+        &output_dir,
+        images_config.as_ref(),
+        &scenarios_sga_path,
+    ) {
+        eprintln!("error: {e}");
         process::exit(1);
-    }
-
-    let locale_sga = depot_path
-        .join("anvil")
-        .join("archives")
-        .join("LocaleEnglish.sga");
-
-    let locale = if locale_sga.exists() {
-        let pb = ProgressBar::new_spinner();
-        pb.set_style(spinner_style());
-        pb.set_message(format!(
-            "Extracting locale from {}...",
-            locale_sga.display()
-        ));
-        pb.enable_steady_tick(Duration::from_millis(80));
-        match locale::parse_locale_sga(&locale_sga) {
-            Ok(l) => {
-                pb.finish_with_message(format!("Locale: {} strings", l.0.len()));
-                l
-            }
-            Err(e) => {
-                pb.finish_with_message(format!("Locale: extraction failed: {e}"));
-                data::LocaleStore(std::collections::BTreeMap::new())
-            }
-        }
-    } else {
-        eprintln!("LocaleEnglish.sga not found, skipping locale");
-        data::LocaleStore(std::collections::BTreeMap::new())
-    };
-
-    let pb = ProgressBar::new_spinner();
-    pb.set_style(spinner_style());
-    pb.set_message(format!("Reading {}...", attrib_sga.display()));
-    pb.enable_steady_tick(Duration::from_millis(80));
-    let entries = match sga::open_archive(&attrib_sga) {
-        Ok(e) => {
-            pb.finish_with_message(format!("SGA: {} files", e.len()));
-            e
-        }
-        Err(e) => {
-            pb.finish_with_message(format!("error reading SGA archive: {e}"));
-            process::exit(1);
-        }
-    };
-
-    let xml_count = entries
-        .iter()
-        .filter(|e| e.path.starts_with("instances/") && e.extension() == Some("xml"))
-        .count() as u64;
-
-    let pb = ProgressBar::new(xml_count);
-    pb.set_style(bar_style());
-    pb.set_message("Parsing entity XML");
-    let mut gd = match attrib::extract_game_data(&entries, locale, version, || pb.inc(1)) {
-        Ok(gd) => gd,
-        Err(e) => {
-            pb.finish_with_message(format!("error extracting game data: {e}"));
-            process::exit(1);
-        }
-    };
-    pb.finish_with_message(format!(
-        "Game data: entities={} squads={} upgrades={} abilities={}",
-        gd.entities.len(),
-        gd.squads.len(),
-        gd.upgrades.len(),
-        gd.abilities.len(),
-    ));
-
-    let data_checksum = checksums::compute_data_checksum(&depot_path).unwrap_or_else(|e| {
-        eprintln!("error computing dataChecksum: {e}");
-        process::exit(1);
-    });
-    gd.data_checksum = Some(data_checksum);
-
-    let exe_path = depot_path.join("RelicCoH3.exe");
-    match semver::derive_semver(&exe_path) {
-        Ok(s) => {
-            eprintln!("Derived marketing semver: {s} (build {version})");
-            gd.semver = Some(s);
-        }
-        Err(e) => {
-            eprintln!("warning: could not derive marketing semver: {e}");
-        }
-    }
-
-    if scenarios_sga_path.exists() {
-        match sga::open_archive(&scenarios_sga_path) {
-            Ok(entries) => {
-                let scenarios = scenario::extract_scenarios(&entries, &gd);
-                eprintln!("Scenarios: {} extracted", scenarios.len());
-                match write_scenarios(&output_dir, &scenarios) {
-                    Ok(refs) => gd.scenarios = refs,
-                    Err(e) => eprintln!("warning: writing scenario records failed: {e}"),
-                }
-            }
-            Err(e) => eprintln!("warning: cannot open {}: {e}", scenarios_sga_path.display()),
-        }
-    } else {
-        eprintln!(
-            "ScenariosMP.sga not found at {}, skipping scenario extraction",
-            scenarios_sga_path.display()
-        );
-    }
-
-    let version_str = version.to_string();
-    let out_version_dir = output_dir.join(&version_str);
-    let out_path = out_version_dir.join("game_data.json");
-
-    std::fs::create_dir_all(&out_version_dir).unwrap_or_else(|e| {
-        eprintln!("cannot create {}: {e}", out_version_dir.display());
-        process::exit(1);
-    });
-
-    let json = serde_json::to_string_pretty(&gd).expect("serialize failed");
-    std::fs::write(&out_path, json).unwrap_or_else(|e| {
-        eprintln!("cannot write {}: {e}", out_path.display());
-        process::exit(1);
-    });
-
-    eprintln!("Written to {}", out_path.display());
-
-    if let Some(cfg) = &images_config {
-        match images::extract_images(cfg, version) {
-            Ok(()) => {}
-            Err(e) => eprintln!("warning: icon extraction failed: {e}"),
-        }
     }
 }
 
@@ -523,6 +404,16 @@ fn cmd_sort_data(args: &[String]) {
 fn cmd_grid(args: &[String]) {
     let (depot_path, output_dir) = grid::parse_grid_args(args);
     grid::run(&depot_path, &output_dir);
+}
+
+/// Pull one historical build's depot files via DepotDownloader and run the
+/// full extraction pipeline against them. See `backfill.rs`'s module doc
+/// comment for what's untested about this.
+///
+/// Usage: cohlib backfill <build_number> --manifest <id> --output <data_dir> [...]
+fn cmd_backfill(args: &[String]) {
+    let parsed = backfill::parse_backfill_args(args);
+    backfill::run(parsed);
 }
 
 fn cmd_build_order(args: &[String]) {
