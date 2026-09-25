@@ -240,6 +240,7 @@ dependencies = [
  "sga 0.1.1",
  "sha2",
  "tar",
+ "terrain",
 ]
 
 [[package]]
@@ -1106,6 +1107,17 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "terrain"
+version = "0.1.0"
+dependencies = [
+ "quick-xml",
+ "scenario",
+ "sga 0.1.0",
+ "sha2",
+ "thiserror",
 ]
 
 [[package]]

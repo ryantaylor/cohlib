@@ -1,0 +1,11 @@
+[package]
+name = "terrain"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+sga       = { workspace = true }
+scenario  = { workspace = true }
+quick-xml = { workspace = true }
+sha2      = { workspace = true }
