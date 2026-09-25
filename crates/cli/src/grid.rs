@@ -39,6 +39,16 @@ pub fn parse_grid_args(args: &[String]) -> (PathBuf, PathBuf) {
 }
 
 pub fn run(depot_path: &Path, output_dir: &Path) {
+    if let Err(e) = extract_and_write(depot_path, output_dir) {
+        eprintln!("error: {e}");
+        process::exit(1);
+    }
+}
+
+/// Core of `cohlib grid`, factored out (no `process::exit`) so `cohlib
+/// backfill` can run it against a freshly-downloaded depot snapshot and
+/// handle a failure per-build rather than aborting the whole process.
+pub fn extract_and_write(depot_path: &Path, output_dir: &Path) -> Result<(), String> {
     let attrib_sga = depot_path
         .join("anvil")
         .join("archives")
@@ -53,33 +63,23 @@ pub fn run(depot_path: &Path, output_dir: &Path) {
         ("ScenariosMP.sga", &scenarios_sga),
     ] {
         if !path.exists() {
-            eprintln!("error: {label} not found at {}", path.display());
-            process::exit(1);
+            return Err(format!("{label} not found at {}", path.display()));
         }
     }
 
-    let attrib_entries = sga::open_archive(&attrib_sga).unwrap_or_else(|e| {
-        eprintln!("error reading {}: {e}", attrib_sga.display());
-        process::exit(1);
-    });
-    let tuning = terrain::extract_camera_tuning(&attrib_entries).unwrap_or_else(|e| {
-        eprintln!("error extracting camera tuning: {e}");
-        process::exit(1);
-    });
+    let attrib_entries = sga::open_archive(&attrib_sga)
+        .map_err(|e| format!("reading {}: {e}", attrib_sga.display()))?;
+    let tuning = terrain::extract_camera_tuning(&attrib_entries)
+        .map_err(|e| format!("extracting camera tuning: {e}"))?;
     let (distance_min, distance_max, pitch_min, pitch_max) =
-        tuning.require_complete().unwrap_or_else(|e| {
-            eprintln!("error: {e}");
-            process::exit(1);
-        });
+        tuning.require_complete().map_err(|e| format!("{e}"))?;
     eprintln!(
         "Camera tuning: distance_min={distance_min} distance_max={distance_max} \
          pitch_min={pitch_min} pitch_max={pitch_max}"
     );
 
-    let scenario_entries = sga::open_archive(&scenarios_sga).unwrap_or_else(|e| {
-        eprintln!("error reading {}: {e}", scenarios_sga.display());
-        process::exit(1);
-    });
+    let scenario_entries = sga::open_archive(&scenarios_sga)
+        .map_err(|e| format!("reading {}: {e}", scenarios_sga.display()))?;
     let results = terrain::extract_terrain_grids(&scenario_entries, distance_max);
 
     let mut grids: Vec<TerrainGrid> = Vec::new();
@@ -97,38 +97,34 @@ pub fn run(depot_path: &Path, output_dir: &Path) {
 
     eprintln!("Extracted {} map grids ({} failed)", grids.len(), failures);
 
-    std::fs::create_dir_all(output_dir).unwrap_or_else(|e| {
-        eprintln!("cannot create {}: {e}", output_dir.display());
-        process::exit(1);
-    });
+    std::fs::create_dir_all(output_dir)
+        .map_err(|e| format!("cannot create {}: {e}", output_dir.display()))?;
 
-    write_coarse_grid_csv(&output_dir.join("coarse_grid.csv"), &grids);
-    write_map_meta_csv(&output_dir.join("map_meta.csv"), &grids);
+    write_coarse_grid_csv(&output_dir.join("coarse_grid.csv"), &grids)?;
+    write_map_meta_csv(&output_dir.join("map_meta.csv"), &grids)?;
     write_tuning_json(
         &output_dir.join("tuning.json"),
         distance_min,
         distance_max,
         pitch_min,
         pitch_max,
-    );
+    )?;
 
     eprintln!("Written to {}", output_dir.display());
+    Ok(())
 }
 
-fn write_coarse_grid_csv(path: &Path, grids: &[TerrainGrid]) {
+fn write_coarse_grid_csv(path: &Path, grids: &[TerrainGrid]) -> Result<(), String> {
     let mut out = String::from("map,bi,bj,tmax\n");
     for g in grids {
         for c in &g.cells {
             out.push_str(&format!("{},{},{},{:.2}\n", g.map, c.bi, c.bj, c.tmax));
         }
     }
-    std::fs::write(path, out).unwrap_or_else(|e| {
-        eprintln!("cannot write {}: {e}", path.display());
-        process::exit(1);
-    });
+    std::fs::write(path, out).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
-fn write_map_meta_csv(path: &Path, grids: &[TerrainGrid]) {
+fn write_map_meta_csv(path: &Path, grids: &[TerrainGrid]) -> Result<(), String> {
     let mut out = String::from("map,w,h,cx,cz,xhalf,zhalf,block_x,block_z,hmax,heightfield_hash\n");
     for g in grids {
         let m = &g.meta;
@@ -147,10 +143,7 @@ fn write_map_meta_csv(path: &Path, grids: &[TerrainGrid]) {
             g.heightfield_hash
         ));
     }
-    std::fs::write(path, out).unwrap_or_else(|e| {
-        eprintln!("cannot write {}: {e}", path.display());
-        process::exit(1);
-    });
+    std::fs::write(path, out).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
 fn write_tuning_json(
@@ -159,7 +152,7 @@ fn write_tuning_json(
     distance_max: f32,
     pitch_min: f32,
     pitch_max: f32,
-) {
+) -> Result<(), String> {
     let value = serde_json::json!({
         "distance_min": distance_min,
         "distance_max": distance_max,
@@ -167,8 +160,5 @@ fn write_tuning_json(
         "pitch_max": pitch_max,
     });
     let json = serde_json::to_string_pretty(&value).expect("serialize failed");
-    std::fs::write(path, json).unwrap_or_else(|e| {
-        eprintln!("cannot write {}: {e}", path.display());
-        process::exit(1);
-    });
+    std::fs::write(path, json).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }

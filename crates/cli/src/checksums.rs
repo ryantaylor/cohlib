@@ -83,7 +83,7 @@ pub fn compute_data_checksum(game_dir: &Path) -> Result<i32, String> {
 /// Parse `RelicGame.module` (INI-like format). Returns a map of
 /// `category -> Vec<(archive_root, archive_name)>` for sections that have
 /// `syncChecked = 1`.
-fn parse_module(path: &Path) -> Result<HashMap<String, Vec<(String, String)>>, String> {
+pub(crate) fn parse_module(path: &Path) -> Result<HashMap<String, Vec<(String, String)>>, String> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
     parse_module_text(&text)
