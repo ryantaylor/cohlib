@@ -10,7 +10,7 @@
 //! `scripts/mp-maps/` — the only other public CoH3 scenario parser, and the
 //! source of that format documentation; see the credit in each module.
 
-mod chunky;
+pub mod chunky;
 mod error;
 mod geometry;
 mod info;

@@ -18,6 +18,7 @@ locale        = { path = "crates/locale" }
 json-import   = { path = "crates/json-import" }
 image         = { path = "crates/image" }
 scenario      = { path = "crates/scenario" }
+terrain       = { path = "crates/terrain" }
 
 # External: the upstream `sga` archive crate, aliased to avoid collision with our `sga` crate
 relic-sga     = { package = "sga", version = "0.1.1" }

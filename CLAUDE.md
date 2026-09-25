@@ -39,6 +39,7 @@ crates/
 ├── json-import/   Import GameData from per-version JSON files (cohdata format)
 ├── image/         Convert RRTEX textures (BC1/BC3) to WebP
 ├── scenario/      Extract map metadata (points, sectors, playable area) from ScenariosMP.sga
+├── terrain/       Terrain grids (heightfield + camera tuning) for the hack detection Zoomhack certificate
 └── cli/           Maintainer CLI binary (`cohlib` + `discover` binaries)
 ```
 
@@ -52,8 +53,9 @@ attrib                ← data + sga
 json-import           ← data
 image                 ← standalone
 scenario              ← data + sga
+terrain               ← sga + scenario (reuses its Relic Chunky reader)
 cohlib                ← replay + data + build-order  (public facade)
-cli                   ← cohlib + sga + attrib + locale + json-import + image + scenario
+cli                   ← cohlib + sga + attrib + locale + json-import + image + scenario + terrain
 ```
 
 Each crate has its own `Error` type. `cohlib::Error` wraps `replay::Error`, `data::Error`, and `build_order::Error`.
@@ -74,6 +76,24 @@ Adding a new game version:
 Extracts per-map metadata from `ScenariosMP.sga`: `.info` (Lua-like table) for dimensions, resource/victory/start point placement and tiers, author, and team layout; `<map>_territory.override` (Relic Chunky) for sector boundaries and adjacency; `<map>_softmapedge.override` for the playable-area mask; and the map's `.layer` files for actually-placed point entities, reconciled against `.info` since it can go stale after edits. Income and capture timing are joined in from `GameData.entities` (`Entity::resource`/`Entity::capture`, populated by `attrib` from `resource_ext`/`strategic_point_ext`). See `crates/scenario/src/lib.rs`'s module doc for the full pipeline and format credits — the `.layer`/`.scenario` entity-scan and sector-geometry approach are informed by [cohstats/coh3-data](https://github.com/cohstats/coh3-data), the only other public CoH3 scenario parser.
 
 Scenario records (`data::Scenario`) are deduplicated across game versions by content hash, since maps rarely change between patches: `GameData.scenarios` maps a normalized scenario path to a hash, and `VersionedStore` holds the actual `Scenario` records in a separate shared table (`data/scenarios/<hash>.json` on disk) looked up via `get_scenario()`/`get_map_size()`. `crates/cli/src/main.rs`'s `write_scenarios` computes the hash and writes each record at import time.
+
+### Terrain grids (`crates/terrain/`)
+
+Supports the (separate, cohdb/next-side) hack detection design's Zoomhack certificate, which needs
+a conservative per-map terrain-height ceiling to bound camera distance without a view-direction
+convention. `cohlib grid <depot_path> --output <dir>` reads each multiplayer map's heightfield
+straight from `ScenariosMP.sga`'s `.scenario` files (Relic Chunky `SCEN/GEWD/TERR/HITE/HFLD`, world
+extent from the top-level `SDSC` chunk) and the isometric camera module's `tuning` group from
+`ReferenceAttributes.sga`'s `instances/camera/default_multiplayer.xml` (matched by element name and
+ancestry, never positionally — that's how a previous pass of this research mis-read `distance_max`
+as 89 instead of 43). It dilates each heightfield by the camera's `distance_max` (never
+hard-coded) and block-downsamples it, writing `coarse_grid.csv`, `map_meta.csv` (map keyed the same
+way as `GameData::scenarios`, not the research script's short basename) and `tuning.json`. Verified
+byte-for-byte against the original Python research script's reference output across all 62 depot
+maps and 32,397 grid cells — see `crates/terrain/examples/verify_parity.rs` to re-run that check
+against a depot and the `cohdb/next` research artifacts. Committing this output under
+`db/hack_detection/terrain/<build>/` and maintaining `manifest.json` is the patch pipeline's job
+(cohdb/next), not cohlib's.
 
 ### Replay parsing (`crates/replay/`)
 

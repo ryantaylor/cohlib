@@ -10,6 +10,7 @@ use cohlib::{extract_build_order, Replay, VersionedStore};
 use indicatif::{ProgressBar, ProgressStyle};
 
 mod checksums;
+mod grid;
 mod images;
 mod semver;
 
@@ -32,12 +33,14 @@ fn main() {
         Some("import") => cmd_import(&args[2..]),
         Some("sort-data") => cmd_sort_data(&args[2..]),
         Some("build-order") => cmd_build_order(&args[2..]),
+        Some("grid") => cmd_grid(&args[2..]),
         _ => {
             eprintln!("Usage:");
             eprintln!("  cohlib populate <source_dir>... --output <data_dir>");
             eprintln!("  cohlib import <depot_path> [--version <build_number>] --output <data_dir> [--images <dir>] [--icons-sga <path>] [--scenarios-sga <path>]");
             eprintln!("  cohlib sort-data <data_dir>");
             eprintln!("  cohlib build-order <replay_path>");
+            eprintln!("  cohlib grid <depot_path> --output <dir>");
             process::exit(1);
         }
     }
@@ -512,6 +515,14 @@ fn cmd_sort_data(args: &[String]) {
     }
 
     println!("Done. Sorted {sorted} versions.");
+}
+
+/// Extract terrain grids for the hack detection design's Zoomhack certificate.
+///
+/// Usage: cohlib grid <depot_path> --output <dir>
+fn cmd_grid(args: &[String]) {
+    let (depot_path, output_dir) = grid::parse_grid_args(args);
+    grid::run(&depot_path, &output_dir);
 }
 
 fn cmd_build_order(args: &[String]) {
