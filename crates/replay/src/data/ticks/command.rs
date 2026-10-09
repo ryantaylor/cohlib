@@ -152,7 +152,7 @@ impl CommandData {
     /// targeting values (position, facing, orientation, entity reference). Block kinds
     /// `0x06` and `0x0F` have a fixed-size, not-yet-understood prefix (4 and 8 bytes
     /// respectively) before the value chain; the other kinds these commands use
-    /// (`0x01`, `0x03`, `0x1D`) have none. See `Value::parse_targets` on why any
+    /// (`0x01`, `0x03`, `0x1D`, `0x1E`) have none. See `Value::parse_targets` on why any
     /// further trailing bytes are intentionally left unread. No block at all (kind
     /// `0xFF`, or absent entirely — the latter seen only for `SCMD_Unload`) yields
     /// all-`None` targeting fields.
@@ -164,7 +164,7 @@ impl CommandData {
                     None => TargetValues::default(),
                     Some(block) => {
                         let skip: u32 = match block.kind {
-                            0x01 | 0x03 | 0x1D => 0,
+                            0x01 | 0x03 | 0x1D | 0x1E => 0,
                             0x06 => 4,
                             0x0F => 8,
                             other => {
