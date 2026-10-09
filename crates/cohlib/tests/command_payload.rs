@@ -230,6 +230,34 @@ fn retreats_carrying_a_facing_decode_as_retreats() {
     );
 }
 
+/// `SCMD_Load` can carry a parameter block of kind `0x1E`: the same target value chain
+/// as kind `0x01`, followed by trailing bytes that are left unread.
+#[test]
+fn loads_with_a_kind_0x1e_parameter_block_decode_their_target() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("replays")
+        .join("v50313_load_targeting_block.rec");
+    let replay = parse_fixture(&path);
+
+    let loads: Vec<_> = replay
+        .players()
+        .iter()
+        .flat_map(|player| player.commands())
+        .filter_map(|command| match command {
+            Command::Load(data) => Some(data),
+            _ => None,
+        })
+        .collect();
+
+    assert!(!loads.is_empty(), "expected load commands");
+    assert!(
+        loads
+            .iter()
+            .all(|data| data.facing().is_some() || data.entity().is_some()),
+        "expected every load to decode its target"
+    );
+}
+
 /// `CMD_CancelConstruction`'s source was assumed scalar until a build 48837 replay
 /// showed it can be a multi-squad selection (cancelling construction on several
 /// selected buildings in one command), so `Sourced` preserves the full `Source`
