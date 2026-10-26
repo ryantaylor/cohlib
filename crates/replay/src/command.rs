@@ -68,8 +68,8 @@ pub enum Command {
     /// A squad reinforcing (adding models back to a depleted squad),
     /// `SCMD_ReinforceUnit`.
     Reinforce(SourcePbgid),
-    /// One or more squads retreating to base. Newer game builds let a retreat carry a
-    /// facing, so the targeting fields are not always empty.
+    /// One or more squads retreating to base. Newer game builds let a retreat target a
+    /// building or other entity, so the targeting fields are not always empty.
     Retreat(Targeted),
     /// An entity or squad setting a rally point, `CMD_RallyPoint`.
     RallyPoint(Targeted),
@@ -356,14 +356,14 @@ impl Command {
                 ),
             },
             ticks::CommandData::Targeted(source, targets) => {
-                let (position, facing, orientation, entity) = split_targets(targets);
+                let (position, target_entity, orientation, entity) = split_targets(targets);
                 let targeted = Targeted::new(
                     action_type,
                     tick,
                     index,
                     source,
                     position,
-                    facing,
+                    target_entity,
                     orientation,
                     entity,
                 );
@@ -400,14 +400,14 @@ impl Command {
             }
             ticks::CommandData::PbgidTargeted(blueprint, targets) => match action_type {
                 CommandType::PCMD_Ability => {
-                    let (position, facing, orientation, entity) = split_targets(targets);
+                    let (position, target_entity, orientation, entity) = split_targets(targets);
                     Self::UseBattlegroupAbility(Pbgid::new(
                         action_type,
                         tick,
                         index,
                         blueprint,
                         position,
-                        facing,
+                        target_entity,
                         orientation,
                         entity,
                     ))
@@ -420,7 +420,7 @@ impl Command {
             ticks::CommandData::SourcedPbgidTargeted(blueprint, source_identifier, targets) => {
                 match action_type {
                     CommandType::CMD_Ability => {
-                        let (position, facing, orientation, entity) = split_targets(targets);
+                        let (position, target_entity, orientation, entity) = split_targets(targets);
                         Self::UseAbility(SourcedAbility::new(
                             action_type,
                             tick,
@@ -428,7 +428,7 @@ impl Command {
                             blueprint,
                             source_identifier,
                             position,
-                            facing,
+                            target_entity,
                             orientation,
                             entity,
                         ))
@@ -441,7 +441,7 @@ impl Command {
             }
             ticks::CommandData::Ability(source, blueprint, targets) => match action_type {
                 CommandType::SCMD_Ability => {
-                    let (position, facing, orientation, entity) = split_targets(targets);
+                    let (position, target_entity, orientation, entity) = split_targets(targets);
                     Self::UseAbilitySquad(Ability::new(
                         action_type,
                         tick,
@@ -449,7 +449,7 @@ impl Command {
                         source,
                         blueprint,
                         position,
-                        facing,
+                        target_entity,
                         orientation,
                         entity,
                     ))
@@ -517,7 +517,7 @@ fn split_targets(
     targets: TargetValues,
 ) -> (
     Option<Position>,
-    Option<f32>,
+    Option<u32>,
     Option<Orientation>,
     Option<u32>,
 ) {
@@ -525,5 +525,5 @@ fn split_targets(
     let orientation = targets
         .orientation
         .map(|[x, y, z, w]| Orientation::new(x, y, z, w));
-    (position, targets.facing, orientation, targets.entity)
+    (position, targets.target_entity, orientation, targets.entity)
 }

@@ -44,11 +44,13 @@ fn orientation_to_a(orientation: Orientation) -> Vec<f32> {
 /// The optional targeting block shared by `Targeted`, `Pbgid`, `SourcedPbgid`,
 /// `SourcedAbility` and `Ability`. Keys are always written, `nil` when absent, so the
 /// key set for a given `:type` is stable and a columnar schema can be derived from it.
+/// `:target_entity` (an entity reference) and `:entity` (a squad reference) are emitted
+/// raw, with their observed `1_000_000_000` and `50_000` offsets intact.
 fn aset_targeting(
     ruby: &Ruby,
     hash: RHash,
     position: Option<Position>,
-    facing: Option<f32>,
+    target_entity: Option<u32>,
     orientation: Option<Orientation>,
     entity: Option<u32>,
 ) {
@@ -57,7 +59,8 @@ fn aset_targeting(
         position.map(|p| position_to_h(ruby, p)),
     )
     .unwrap();
-    hash.aset(ruby.to_symbol("facing"), facing).unwrap();
+    hash.aset(ruby.to_symbol("target_entity"), target_entity)
+        .unwrap();
     hash.aset(
         ruby.to_symbol("orientation"),
         orientation.map(orientation_to_a),
@@ -102,7 +105,7 @@ pub(crate) fn to_h(ruby: &Ruby, rb_self: &Command) -> RHash {
                 ruby,
                 hash,
                 data.position(),
-                data.facing(),
+                data.target_entity(),
                 data.orientation(),
                 data.entity(),
             );
@@ -130,7 +133,7 @@ pub(crate) fn to_h(ruby: &Ruby, rb_self: &Command) -> RHash {
                 ruby,
                 hash,
                 data.position(),
-                data.facing(),
+                data.target_entity(),
                 data.orientation(),
                 data.entity(),
             );
@@ -146,7 +149,7 @@ pub(crate) fn to_h(ruby: &Ruby, rb_self: &Command) -> RHash {
                 ruby,
                 hash,
                 data.position(),
-                data.facing(),
+                data.target_entity(),
                 data.orientation(),
                 data.entity(),
             );
@@ -167,7 +170,7 @@ pub(crate) fn to_h(ruby: &Ruby, rb_self: &Command) -> RHash {
                 ruby,
                 hash,
                 data.position(),
-                data.facing(),
+                data.target_entity(),
                 data.orientation(),
                 data.entity(),
             );
@@ -188,7 +191,7 @@ pub(crate) fn to_h(ruby: &Ruby, rb_self: &Command) -> RHash {
                 ruby,
                 hash,
                 data.position(),
-                data.facing(),
+                data.target_entity(),
                 data.orientation(),
                 data.entity(),
             );

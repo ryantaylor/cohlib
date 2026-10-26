@@ -199,11 +199,11 @@ fn use_ability_without_a_blueprint_decodes_with_no_pbgid() {
     );
 }
 
-/// Retreats were parameter-less until a later game build let them carry a facing, so
-/// they decode through the same targeting machinery as movement commands rather than as
-/// a source-only command.
+/// Retreats were parameter-less until a later game build let them target a building or
+/// other entity, so they decode through the same targeting machinery as movement
+/// commands rather than as a source-only command.
 #[test]
-fn retreats_carrying_a_facing_decode_as_retreats() {
+fn retreats_targeting_an_entity_decode_as_retreats() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("replays")
         .join("v44736_retreat_to_position.rec");
@@ -223,10 +223,61 @@ fn retreats_carrying_a_facing_decode_as_retreats() {
     assert_eq!(
         retreats
             .iter()
-            .filter(|data| data.facing().is_some())
+            .filter(|data| data.target_entity().is_some())
             .count(),
         16,
-        "expected every retreat carrying a facing to decode it"
+        "expected every retreat targeting an entity to decode it"
+    );
+}
+
+/// Value tag `0x03` is an entity reference (`1_000_000_000 + entity_id`), not a facing
+/// angle: every capture targets its strategic point through one.
+#[test]
+fn captures_decode_their_target_entity() {
+    let mut captures = 0;
+    for path in fixture_paths() {
+        let replay = parse_fixture(&path);
+        for command in replay.players().iter().flat_map(|player| player.commands()) {
+            let Command::Capture(data) = command else {
+                continue;
+            };
+            captures += 1;
+            let target = data
+                .target_entity()
+                .unwrap_or_else(|| panic!("capture without a target entity in {path:?}"));
+            assert!(
+                (1_000_000_000..1_001_000_000).contains(&target),
+                "capture target entity {target} outside the expected range in {path:?}"
+            );
+        }
+    }
+    assert!(captures > 0, "expected capture commands");
+}
+
+/// Value tag `0x04` is a squad reference (`50_000 + squad_id`).
+#[test]
+fn attacks_decode_their_target_squad() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("replays")
+        .join("automatch.rec");
+    let replay = parse_fixture(&path);
+
+    let targets: Vec<_> = replay
+        .players()
+        .iter()
+        .flat_map(|player| player.commands())
+        .filter_map(|command| match command {
+            Command::Attack(data) => data.entity(),
+            _ => None,
+        })
+        .collect();
+
+    assert!(!targets.is_empty(), "expected attacks targeting a squad");
+    assert!(
+        targets
+            .iter()
+            .all(|target| (50_000..51_000).contains(target)),
+        "expected every attack target to be a squad reference"
     );
 }
 
@@ -253,7 +304,7 @@ fn loads_with_a_kind_0x1e_parameter_block_decode_their_target() {
     assert!(
         loads
             .iter()
-            .all(|data| data.facing().is_some() || data.entity().is_some()),
+            .all(|data| data.target_entity().is_some() || data.entity().is_some()),
         "expected every load to decode its target"
     );
 }
