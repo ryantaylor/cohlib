@@ -67,16 +67,19 @@ impl Blueprint {
 #[derive(Debug, Default, Copy, Clone)]
 pub(crate) struct TargetValues {
     pub position: Option<[f32; 3]>,
-    pub facing: Option<f32>,
+    pub target_entity: Option<u32>,
     pub orientation: Option<[f32; 4]>,
+    /// A squad reference; named `entity` for compatibility.
     pub entity: Option<u32>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) enum Value {
     Position([f32; 3]),
-    Facing(f32),
-    EntityRef(u32),
+    /// Tag `0x03`: an entity reference, observed as `1_000_000_000 + entity_id`.
+    TargetEntity(u32),
+    /// Tag `0x04`: a squad reference, observed as `50_000 + squad_id`.
+    SquadRef(u32),
     Orientation([f32; 4]),
 }
 
@@ -92,8 +95,8 @@ impl Value {
             0x02 => map(tuple((le_f32, le_f32, le_f32)), |(x, y, z)| {
                 Value::Position([x, y, z])
             })(input),
-            0x03 => map(le_f32, Value::Facing)(input),
-            0x04 => map(le_u32, Value::EntityRef)(input),
+            0x03 => map(le_u32, Value::TargetEntity)(input),
+            0x04 => map(le_u32, Value::SquadRef)(input),
             0x05 => map(tuple((le_f32, le_f32, le_f32, le_f32)), |(a, b, c, d)| {
                 Value::Orientation([a, b, c, d])
             })(input),
@@ -101,8 +104,8 @@ impl Value {
         }
     }
 
-    /// Greedily parses a chain of targeting-relevant values (position, facing, entity
-    /// reference, orientation) from the front of `input`, stopping at the first tag
+    /// Greedily parses a chain of targeting-relevant values (position, entity reference,
+    /// squad reference, orientation) from the front of `input`, stopping at the first tag
     /// that isn't one of those four. Movement commands in particular carry additional
     /// trailing bytes after this chain that aren't `Value`s at all and aren't understood
     /// yet; stopping cleanly at the first unrecognized byte and leaving the rest unread
@@ -122,8 +125,8 @@ impl Value {
             let (rest, value) = Self::parse(input)?;
             match value {
                 Value::Position(p) => values.position = Some(p),
-                Value::Facing(f) => values.facing = Some(f),
-                Value::EntityRef(e) => values.entity = Some(e),
+                Value::TargetEntity(e) => values.target_entity = Some(e),
+                Value::SquadRef(e) => values.entity = Some(e),
                 Value::Orientation(o) => values.orientation = Some(o),
             }
             input = rest;

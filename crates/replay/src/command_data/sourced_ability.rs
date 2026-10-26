@@ -21,7 +21,7 @@ pub struct SourcedAbility {
     mod_uuid: Option<Uuid>,
     source_identifier: u16,
     position: Option<Position>,
-    facing: Option<f32>,
+    target_entity: Option<u32>,
     orientation: Option<Orientation>,
     entity: Option<u32>,
 }
@@ -35,7 +35,7 @@ impl SourcedAbility {
         blueprint: Option<Blueprint>,
         source_identifier: u16,
         position: Option<Position>,
-        facing: Option<f32>,
+        target_entity: Option<u32>,
         orientation: Option<Orientation>,
         entity: Option<u32>,
     ) -> Self {
@@ -47,7 +47,7 @@ impl SourcedAbility {
             mod_uuid: blueprint.and_then(|b| b.mod_uuid),
             source_identifier,
             position,
-            facing,
+            target_entity,
             orientation,
             entity,
         }
@@ -96,15 +96,19 @@ impl SourcedAbility {
     pub fn position(&self) -> Option<Position> {
         self.position
     }
-    /// The target facing angle in radians, if this command carried one.
-    pub fn facing(&self) -> Option<f32> {
-        self.facing
+    /// The raw engine reference to the targeted entity (e.g. a strategic point, dropped
+    /// weapon or building), if this command carried one. Observed as `1_000_000_000 +`
+    /// the entity's in-match id.
+    pub fn target_entity(&self) -> Option<u32> {
+        self.target_entity
     }
     /// The target orientation, if this command carried one.
     pub fn orientation(&self) -> Option<Orientation> {
         self.orientation
     }
-    /// The internal engine ID of the targeted entity, if this command carried one.
+    /// The raw engine reference to the targeted squad, if this command carried one.
+    /// Observed as `50_000 +` the squad id that appears in a
+    /// [`Source`](crate::command_data::Source).
     pub fn entity(&self) -> Option<u32> {
         self.entity
     }

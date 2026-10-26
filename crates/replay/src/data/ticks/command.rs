@@ -34,8 +34,8 @@ pub enum CommandData {
     /// Header, source and a blueprint, with the full `Source` preserved (unlike
     /// `SourcedPbgid`, which keeps only the legacy truncated identifier).
     SourcePbgid(Source, Blueprint),
-    /// Header, source, and zero or more targeting values (position, facing,
-    /// orientation, target entity).
+    /// Header, source, and zero or more targeting values (position, orientation,
+    /// target entity or squad).
     Targeted(Source, TargetValues),
     /// A blueprint and zero or more targeting values, with no source (used by
     /// `PCMD_Ability`, whose source is always the issuing player).
@@ -149,7 +149,7 @@ impl CommandData {
     }
 
     /// Header, source, then an optional parameter block containing zero or more
-    /// targeting values (position, facing, orientation, entity reference). Block kinds
+    /// targeting values (position, orientation, entity or squad reference). Block kinds
     /// `0x06` and `0x0F` have a fixed-size, not-yet-understood prefix (4 and 8 bytes
     /// respectively) before the value chain; the other kinds these commands use
     /// (`0x01`, `0x03`, `0x1D`, `0x1E`) have none. See `Value::parse_targets` on why any

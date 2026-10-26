@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// A simple command format that contains an entity pbgid, and optionally targeting
-/// fields (position, facing, orientation, target entity) for the handful of command
+/// fields (position, orientation, target entity or squad) for the handful of command
 /// types whose payload carries them — `None` for commands whose payload doesn't.
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
@@ -16,7 +16,7 @@ pub struct Pbgid {
     pbgid: u32,
     mod_uuid: Option<Uuid>,
     position: Option<Position>,
-    facing: Option<f32>,
+    target_entity: Option<u32>,
     orientation: Option<Orientation>,
     entity: Option<u32>,
 }
@@ -29,7 +29,7 @@ impl Pbgid {
         index: u32,
         blueprint: Blueprint,
         position: Option<Position>,
-        facing: Option<f32>,
+        target_entity: Option<u32>,
         orientation: Option<Orientation>,
         entity: Option<u32>,
     ) -> Self {
@@ -40,7 +40,7 @@ impl Pbgid {
             pbgid: blueprint.pbgid,
             mod_uuid: blueprint.mod_uuid,
             position,
-            facing,
+            target_entity,
             orientation,
             entity,
         }
@@ -83,15 +83,19 @@ impl Pbgid {
     pub fn position(&self) -> Option<Position> {
         self.position
     }
-    /// The target facing angle in radians, if this command carried one.
-    pub fn facing(&self) -> Option<f32> {
-        self.facing
+    /// The raw engine reference to the targeted entity (e.g. a strategic point, dropped
+    /// weapon or building), if this command carried one. Observed as `1_000_000_000 +`
+    /// the entity's in-match id.
+    pub fn target_entity(&self) -> Option<u32> {
+        self.target_entity
     }
     /// The target orientation, if this command carried one.
     pub fn orientation(&self) -> Option<Orientation> {
         self.orientation
     }
-    /// The internal engine ID of the targeted entity, if this command carried one.
+    /// The raw engine reference to the targeted squad, if this command carried one.
+    /// Observed as `50_000 +` the squad id that appears in a
+    /// [`Source`](crate::command_data::Source).
     pub fn entity(&self) -> Option<u32> {
         self.entity
     }
