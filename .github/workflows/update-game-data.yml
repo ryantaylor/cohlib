@@ -155,6 +155,22 @@ jobs:
         run: |
           ./target/release/cohlib import depot/ --output data/ --images images/
 
+      # Terrain grids for hack detection, packaged as terrain.tar.gz for
+      # cohdb's sync-patch.yml. A failure here must not block the game data
+      # release: cohdb treats a build without terrain as unscoreable.
+      - name: Extract terrain grids
+        if: steps.version.outputs.is_new == 'true'
+        id: terrain
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if ./target/release/cohlib grid depot/ --output "terrain/$VERSION"; then
+            tar -czf "images/$VERSION/terrain.tar.gz" -C "terrain/$VERSION" .
+            echo "asset=images/$VERSION/terrain.tar.gz" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Terrain grid extraction failed; release ships without terrain.tar.gz"
+          fi
+
       # Read the marketing semver written by `cohlib import` into game_data.json.
       # Fall back to the build number when semver derivation failed (the import
       # logs a warning but does not fail in that case).
@@ -230,13 +246,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
           RELEASE_TAG: ${{ steps.tag.outputs.release_tag }}
+          TERRAIN_ASSET: ${{ steps.terrain.outputs.asset }}
         run: |
           gh release create "$RELEASE_TAG" \
             --title "$RELEASE_TAG" \
             --notes "Automated import of CoH3 game data for build $VERSION." \
             "images/$VERSION/manifest.json" \
             "images/$VERSION/full.tar.gz" \
-            "images/$VERSION/delta.tar.gz"
+            "images/$VERSION/delta.tar.gz" \
+            ${TERRAIN_ASSET:+"$TERRAIN_ASSET"}
 
       # Pushes made with GITHUB_TOKEN do not trigger other workflows, so we
       # dispatch to cohlib-rb explicitly instead of relying on notify-cohlib-rb.yml.

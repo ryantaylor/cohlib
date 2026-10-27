@@ -93,7 +93,9 @@ byte-for-byte against the original Python research script's reference output acr
 maps and 32,397 grid cells — see `crates/terrain/examples/verify_parity.rs` to re-run that check
 against a depot and the `cohdb/next` research artifacts. Committing this output under
 `db/hack_detection/terrain/<build>/` and maintaining `manifest.json` is the patch pipeline's job
-(cohdb/next), not cohlib's.
+(cohdb/next), not cohlib's. `update-game-data.yml` runs the command on each new build and attaches
+the output to the release as `terrain.tar.gz`; a failed extraction warns and omits the asset rather
+than blocking the release.
 
 ### Replay parsing (`crates/replay/`)
 
