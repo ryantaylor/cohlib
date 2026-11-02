@@ -26,19 +26,20 @@ jobs:
       - name: Fetch current buildid from Steam
         id: steam
         run: |
-          docker run --rm steamcmd/steamcmd:latest \
+          # Recent steamcmd clients make a socket syscall blocked by
+          # Docker's default seccomp profile ("CreateBoundSocket ... (38)").
+          docker run --rm --security-opt seccomp=unconfined \
+            steamcmd/steamcmd:latest \
             +login anonymous \
             +app_info_update 1 \
             +app_info_print 1677280 \
-            +quit 2>/dev/null \
-            | grep '"buildid"' \
-            | grep -oP '"\K[0-9]+(?=")' \
-            > /tmp/current_buildid.txt
+            +quit > /tmp/steamcmd.log 2>&1 || true
 
-          CURRENT=$(cat /tmp/current_buildid.txt)
+          CURRENT=$(grep '"buildid"' /tmp/steamcmd.log | grep -oP '"\K[0-9]+(?=")' || true)
           if [ -z "$CURRENT" ]; then
-            echo "Failed to parse buildid from Steam — skipping."
-            exit 0
+            echo "::error::Failed to parse buildid from steamcmd output"
+            grep -v '^\s*"' /tmp/steamcmd.log | tail -40
+            exit 1
           fi
           echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
 
