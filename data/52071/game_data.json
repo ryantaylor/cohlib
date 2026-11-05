@@ -244605,7 +244605,11 @@
     "11319508": "Invalid Account Type for Match Type"
   },
   "data_checksum": 1910246333,
-  "semver": null,
+  "semver": {
+    "major": 3,
+    "minor": 0,
+    "patch": 0
+  },
   "scenarios": {
     "scenarios/multiplayer/alamein_4p/alamein_4p": "db88b634fa0b8c73",
     "scenarios/multiplayer/ancona_railyard_2p/ancona_railyard_2p": "0d660c3c7fcebd3b",
