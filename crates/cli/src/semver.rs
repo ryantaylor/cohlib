@@ -12,8 +12,8 @@
 //! 1. Find UTF-16LE format string `L"%d.%d.%d.%d\0"` in `.rdata`.
 //! 2. Scan `.text` for the byte signature:
 //!    ```text
-//!    41 B9 mm 00 00 00       mov r9d, <minor>
-//!    41 B8 MM 00 00 00       mov r8d, <major>
+//!    41 B9 mm 00 00 00       mov r9d, <minor>   (or 45 33 C9  xor r9d, r9d when 0)
+//!    41 B8 MM 00 00 00       mov r8d, <major>   (or 45 33 C0  xor r8d, r8d when 0)
 //!    48 8D 15 dd dd dd dd    lea rdx, [rip+disp32]  ; disp resolves to fmt string
 //!    ```
 //! 3. Extract `major` and `minor` from those immediates.
@@ -136,38 +136,20 @@ fn find_marketing_swprintf(
     if text_ro + text_rs > buf.len() {
         return Err(".text section extends past end of file".into());
     }
-    let end = text_ro + text_rs - 19;
+    let end = text_ro + text_rs;
 
     let mut candidates: Vec<(usize, u8, u8)> = Vec::new();
-    let mut i = text_ro;
-    while i <= end {
-        // 41 B9 mm 00 00 00 41 B8 MM 00 00 00 48 8D 15 dd dd dd dd
-        if buf[i] == 0x41
-            && buf[i + 1] == 0xB9
-            && buf[i + 3] == 0x00
-            && buf[i + 4] == 0x00
-            && buf[i + 5] == 0x00
-            && buf[i + 6] == 0x41
-            && buf[i + 7] == 0xB8
-            && buf[i + 9] == 0x00
-            && buf[i + 10] == 0x00
-            && buf[i + 11] == 0x00
-            && buf[i + 12] == 0x48
-            && buf[i + 13] == 0x8D
-            && buf[i + 14] == 0x15
-        {
-            let minor = buf[i + 2];
-            let major = buf[i + 8];
-            let disp32 = i32::from_le_bytes(buf[i + 15..i + 19].try_into().unwrap());
-            let lea_file_off = i + 12;
-            let lea_instr_va = image_base + text.va as u64 + (lea_file_off - text_ro) as u64;
-            let lea_target = (lea_instr_va as i64) + 7 + disp32 as i64;
-            let target_rva = lea_target - image_base as i64;
-            if target_rva == fmt_rva as i64 {
-                candidates.push((i, major, minor));
-            }
+    for i in text_ro..end {
+        let Some((lea_off, major, minor)) = match_marketing_site(&buf[..end], i) else {
+            continue;
+        };
+        let disp32 = i32::from_le_bytes(buf[lea_off + 3..lea_off + 7].try_into().unwrap());
+        let lea_instr_va = image_base + text.va as u64 + (lea_off - text_ro) as u64;
+        let lea_target = (lea_instr_va as i64) + 7 + disp32 as i64;
+        let target_rva = lea_target - image_base as i64;
+        if target_rva == fmt_rva as i64 {
+            candidates.push((i, major, minor));
         }
-        i += 1;
     }
 
     if candidates.is_empty() {
@@ -180,6 +162,26 @@ fn find_marketing_swprintf(
         .copied()
         .unwrap_or(candidates[0]);
     Ok(chosen)
+}
+
+/// Matches `<r9d = minor> <r8d = major> lea rdx, [rip+disp32]` at `i`, returning
+/// `(lea_offset, major, minor)`. Each register is set by `mov r??d, imm32`, or by
+/// `xor r??d, r??d` when the value is 0 (e.g. minor in 3.0.0).
+fn match_marketing_site(buf: &[u8], i: usize) -> Option<(usize, u8, u8)> {
+    let (minor, len) = match_imm_or_zero(buf, i, 1)?;
+    let (major, len2) = match_imm_or_zero(buf, i + len, 0)?;
+    let lea_off = i + len + len2;
+    (buf.get(lea_off..lea_off + 7)?[..3] == [0x48, 0x8D, 0x15]).then_some((lea_off, major, minor))
+}
+
+/// Matches `mov r8d/r9d, imm8-as-imm32` (`41 B8+lo ii 00 00 00`) or `xor r8d/r9d, same`
+/// (`45 33 C0|lo*9`) at `j`, where `lo` is 0 for r8d and 1 for r9d. Returns `(value, length)`.
+fn match_imm_or_zero(buf: &[u8], j: usize, lo: u8) -> Option<(u8, usize)> {
+    match buf.get(j..j + 6) {
+        Some(&[0x41, op, imm, 0, 0, 0]) if op == 0xB8 + lo => return Some((imm, 6)),
+        _ => {}
+    }
+    (buf.get(j..j + 3)? == [0x45, 0x33, 0xC0 | (lo << 3) | lo]).then_some((0, 3))
 }
 
 /// The 5th swprintf arg (`patch`) is passed via `[rsp+0x20]`. The stack store
@@ -325,4 +327,72 @@ fn match_reg_assignment(buf: &[u8], j: usize, reg: u8) -> Option<u8> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // `mov [rsp+0x20], r15; mov r9d, 4; mov r8d, 2; lea rdx, [rip+..]` (2.4.x).
+    const SITE_2_4: [u8; 24] = [
+        0x4C, 0x89, 0x7C, 0x24, 0x20, 0x41, 0xB9, 0x04, 0x00, 0x00, 0x00, 0x41, 0xB8, 0x02, 0x00,
+        0x00, 0x00, 0x48, 0x8D, 0x15, 0xAE, 0xF6, 0x61, 0x05,
+    ];
+
+    // `mov [rsp+0x20], r14; xor r9d, r9d; mov r8d, 3; lea rdx, [rip+..]` (3.0.0, build 52071).
+    const SITE_3_0: [u8; 21] = [
+        0x4C, 0x89, 0x74, 0x24, 0x20, 0x45, 0x33, 0xC9, 0x41, 0xB8, 0x03, 0x00, 0x00, 0x00, 0x48,
+        0x8D, 0x15, 0x64, 0xD3, 0x85, 0x03,
+    ];
+
+    #[test]
+    fn matches_immediate_minor_and_major() {
+        assert_eq!(match_marketing_site(&SITE_2_4, 5), Some((17, 2, 4)));
+    }
+
+    #[test]
+    fn matches_xor_zeroed_minor() {
+        assert_eq!(match_marketing_site(&SITE_3_0, 5), Some((14, 3, 0)));
+    }
+
+    #[test]
+    fn matches_xor_zeroed_major() {
+        let site = [
+            0x45, 0x33, 0xC9, 0x45, 0x33, 0xC0, 0x48, 0x8D, 0x15, 0, 0, 0, 0,
+        ];
+        assert_eq!(match_marketing_site(&site, 0), Some((6, 0, 0)));
+    }
+
+    #[test]
+    fn rejects_swapped_registers() {
+        // mov r8d, 3; mov r9d, 0 — wrong order for the marketing site.
+        let site = [
+            0x41, 0xB8, 0x03, 0, 0, 0, 0x41, 0xB9, 0, 0, 0, 0, 0x48, 0x8D, 0x15, 0, 0, 0, 0,
+        ];
+        assert_eq!(match_marketing_site(&site, 0), None);
+    }
+
+    #[test]
+    fn rejects_truncated_lea() {
+        assert_eq!(match_marketing_site(&SITE_3_0[..18], 5), None);
+    }
+
+    #[test]
+    fn decodes_rsp20_store_registers() {
+        assert_eq!(decode_rsp20_store_reg(0x4C, 0x74), Some(14));
+        assert_eq!(decode_rsp20_store_reg(0x4C, 0x7C), Some(15));
+    }
+
+    /// Set COHLIB_SEMVER_EXES to `path=major.minor.patch,...` to check real executables.
+    #[test]
+    fn derives_semver_from_real_executables() {
+        let Ok(spec) = std::env::var("COHLIB_SEMVER_EXES") else {
+            return;
+        };
+        for entry in spec.split(',') {
+            let (path, expected) = entry.rsplit_once('=').expect("path=semver");
+            let s = derive_semver(Path::new(path)).unwrap_or_else(|e| panic!("{path}: {e}"));
+            assert_eq!(s.to_string(), expected, "{path}");
+        }
+    }
 }
