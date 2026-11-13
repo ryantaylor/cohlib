@@ -55,6 +55,8 @@ pub enum Command {
     DetonateCharges(Targeted),
     /// A squad facing a direction, `SCMD_Face`.
     Face(Targeted),
+    /// An entity force-attacking a target, `CMD_AttackForced`.
+    ForceAttack(Targeted),
     /// A squad loading into a transport, `SCMD_Load`.
     Load(Targeted),
     /// An entity moving, `CMD_Move`.
@@ -63,11 +65,18 @@ pub enum Command {
     MoveSquad(Targeted),
     /// A squad picking up a dropped item, `SCMD_PickUpSimItem`.
     PickUpSimItem(Targeted),
+    /// A player purchasing all of their pending battlegroup ability selections,
+    /// `PCMD_TentativeUpgradePurchaseAll`. The purchase carries no blueprint: what was
+    /// bought is the `SelectBattlegroupAbility` commands since the last purchase or
+    /// `DeselectAllBattlegroupAbilities`.
+    PurchaseBattlegroupAbilities(Targeted),
     /// A squad recrewing an abandoned team weapon, `SCMD_Recrew`.
     Recrew(Targeted),
     /// A squad reinforcing (adding models back to a depleted squad),
     /// `SCMD_ReinforceUnit`.
     Reinforce(SourcePbgid),
+    /// One or more squads targeting an entity with `SCMD_RevertFieldSupport`.
+    RevertFieldSupport(Targeted),
     /// One or more squads retreating to base. Newer game builds let a retreat target a
     /// building or other entity, so the targeting fields are not always empty.
     Retreat(Targeted),
@@ -75,11 +84,16 @@ pub enum Command {
     RallyPoint(Targeted),
     SelectBattlegroup(Pbgid),
     SelectBattlegroupAbility(Pbgid),
+    /// A squad setting up its team weapon at a position, `SCMD_SetupTeamWeapon`.
+    SetupTeamWeapon(Targeted),
     /// One or more squads halting their current action.
     Stop(Targeted),
     /// A squad or entity stopping its currently active ability, `SCMD_StopAbility` or
     /// `CMD_StopAbility` — both produce this variant since the effect is the same.
     StopAbility(SourcePbgid),
+    /// A player stopping an active player-level ability, `PCMD_StopAbility` — the
+    /// counterpart of [`Self::UseBattlegroupAbility`].
+    StopBattlegroupAbility(Pbgid),
     /// A player surrendering the match.
     Surrender(Targeted),
     /// A squad disembarking from a transport, `SCMD_Unload`.
@@ -100,13 +114,15 @@ pub enum Command {
     /// optional, the same as [`Self::UseAbility`].
     UseAbilitySquad(Ability),
     UseBattlegroupAbility(Pbgid),
+    /// A squad vaulting at a position, `SCMD_Vault`.
+    Vault(Targeted),
     Unknown(Unknown),
 }
 
 /// A borrowed view of a command's payload, discriminated by payload *shape* rather than
-/// by semantic variant. Thirteen shapes cover all 37 variants, so consumers that only
+/// by semantic variant. Thirteen shapes cover all 43 variants, so consumers that only
 /// care about the data layout — serializers, hash builders — match on thirteen arms
-/// instead of thirty-seven.
+/// instead of forty-three.
 #[derive(Debug, Clone, Copy)]
 pub enum CommandPayloadRef<'a> {
     Ability(&'a Ability),
@@ -125,7 +141,7 @@ pub enum CommandPayloadRef<'a> {
 }
 
 /// Generates `Command`'s variant-wide dispatch from a single copy of the variant list,
-/// so adding a variant doesn't mean editing several parallel 37-arm matches by hand.
+/// so adding a variant doesn't mean editing several parallel 43-arm matches by hand.
 /// Each generated match is exhaustive, so any drift between this list and the `Command`
 /// enum above is a compile error in both directions — don't add a `_ =>` catch-all arm
 /// to any of them, since that would silently defeat the guarantee.
@@ -170,18 +186,23 @@ command_variants! {
     DeselectAllBattlegroupAbilities(Targeted),
     DetonateCharges(Targeted),
     Face(Targeted),
+    ForceAttack(Targeted),
     Load(Targeted),
     Move(Targeted),
     MoveSquad(Targeted),
     PickUpSimItem(Targeted),
+    PurchaseBattlegroupAbilities(Targeted),
     Recrew(Targeted),
     Reinforce(SourcePbgid),
+    RevertFieldSupport(Targeted),
     Retreat(Targeted),
     RallyPoint(Targeted),
     SelectBattlegroup(Pbgid),
     SelectBattlegroupAbility(Pbgid),
+    SetupTeamWeapon(Targeted),
     Stop(Targeted),
     StopAbility(SourcePbgid),
+    StopBattlegroupAbility(Pbgid),
     Surrender(Targeted),
     Unload(Targeted),
     UnloadSquads(Targeted),
@@ -189,6 +210,7 @@ command_variants! {
     UseAbility(SourcedAbility),
     UseAbilitySquad(Ability),
     UseBattlegroupAbility(Pbgid),
+    Vault(Targeted),
     Unknown(Unknown),
 }
 
@@ -376,6 +398,13 @@ impl Command {
                     CommandType::PCMD_TentativeUpgradeRemoveAll => {
                         Self::DeselectAllBattlegroupAbilities(targeted)
                     }
+                    CommandType::PCMD_TentativeUpgradePurchaseAll => {
+                        Self::PurchaseBattlegroupAbilities(targeted)
+                    }
+                    CommandType::CMD_AttackForced => Self::ForceAttack(targeted),
+                    CommandType::SCMD_RevertFieldSupport => Self::RevertFieldSupport(targeted),
+                    CommandType::SCMD_SetupTeamWeapon => Self::SetupTeamWeapon(targeted),
+                    CommandType::SCMD_Vault => Self::Vault(targeted),
                     CommandType::PCMD_Surrender => Self::Surrender(targeted),
                     CommandType::CMD_RallyPoint => Self::RallyPoint(targeted),
                     CommandType::CMD_Move => Self::Move(targeted),
@@ -399,9 +428,9 @@ impl Command {
                 }
             }
             ticks::CommandData::PbgidTargeted(blueprint, targets) => match action_type {
-                CommandType::PCMD_Ability => {
+                CommandType::PCMD_Ability | CommandType::PCMD_StopAbility => {
                     let (position, target_entity, orientation, entity) = split_targets(targets);
-                    Self::UseBattlegroupAbility(Pbgid::new(
+                    let pbgid = Pbgid::new(
                         action_type,
                         tick,
                         index,
@@ -410,7 +439,12 @@ impl Command {
                         target_entity,
                         orientation,
                         entity,
-                    ))
+                    );
+                    if action_type == CommandType::PCMD_Ability {
+                        Self::UseBattlegroupAbility(pbgid)
+                    } else {
+                        Self::StopBattlegroupAbility(pbgid)
+                    }
                 }
                 _ => panic!(
                     "a pbgid-targeted command isn't being handled here! command type {:?}",
