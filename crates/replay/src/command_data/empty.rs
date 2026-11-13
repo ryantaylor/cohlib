@@ -1,3 +1,4 @@
+use crate::command_data::Issuer;
 use crate::command_type::CommandType;
 use serde::{Deserialize, Serialize};
 
@@ -8,14 +9,16 @@ pub struct Empty {
     action_type: CommandType,
     tick: u32,
     index: u32,
+    issuer: Issuer,
 }
 
 impl Empty {
-    pub(crate) fn new(action_type: CommandType, tick: u32, index: u32) -> Self {
+    pub(crate) fn new(action_type: CommandType, tick: u32, index: u32, issuer: Issuer) -> Self {
         Self {
             action_type,
             tick,
             index,
+            issuer,
         }
     }
 
@@ -36,5 +39,9 @@ impl Empty {
     /// determine how many commands that player issued in a given game.
     pub fn index(&self) -> u32 {
         self.index
+    }
+    /// Who issued this command.
+    pub fn issuer(&self) -> Issuer {
+        self.issuer
     }
 }

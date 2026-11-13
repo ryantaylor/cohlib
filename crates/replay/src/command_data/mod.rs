@@ -6,6 +6,7 @@ mod camera_counts;
 mod camera_track;
 mod construction;
 mod empty;
+mod issuer;
 mod orientation;
 mod pbgid;
 mod position;
@@ -25,6 +26,7 @@ pub use crate::command_data::camera_counts::CameraCounts;
 pub use crate::command_data::camera_track::CameraTrack;
 pub use crate::command_data::construction::Construction;
 pub use crate::command_data::empty::Empty;
+pub use crate::command_data::issuer::Issuer;
 pub use crate::command_data::orientation::Orientation;
 pub use crate::command_data::pbgid::Pbgid;
 pub use crate::command_data::position::Position;
@@ -49,6 +51,7 @@ pub trait CommandPayload {
     fn action_type(&self) -> CommandType;
     fn tick(&self) -> u32;
     fn index(&self) -> u32;
+    fn issuer(&self) -> Issuer;
     /// The blueprint this command references, if the payload carries one.
     fn pbgid(&self) -> Option<u32> {
         None
@@ -70,6 +73,9 @@ impl CommandPayload for Empty {
     fn index(&self) -> u32 {
         Empty::index(self)
     }
+    fn issuer(&self) -> Issuer {
+        Empty::issuer(self)
+    }
 }
 
 impl CommandPayload for Unknown {
@@ -82,6 +88,9 @@ impl CommandPayload for Unknown {
     fn index(&self) -> u32 {
         Unknown::index(self)
     }
+    fn issuer(&self) -> Issuer {
+        Unknown::issuer(self)
+    }
 }
 
 impl CommandPayload for Targeted {
@@ -93,6 +102,9 @@ impl CommandPayload for Targeted {
     }
     fn index(&self) -> u32 {
         Targeted::index(self)
+    }
+    fn issuer(&self) -> Issuer {
+        Targeted::issuer(self)
     }
     fn source(&self) -> Option<&Source> {
         Some(Targeted::source(self))
@@ -109,6 +121,9 @@ impl CommandPayload for Pbgid {
     fn index(&self) -> u32 {
         Pbgid::index(self)
     }
+    fn issuer(&self) -> Issuer {
+        Pbgid::issuer(self)
+    }
     fn pbgid(&self) -> Option<u32> {
         Some(Pbgid::pbgid(self))
     }
@@ -124,6 +139,9 @@ impl CommandPayload for SourcedPbgid {
     fn index(&self) -> u32 {
         SourcedPbgid::index(self)
     }
+    fn issuer(&self) -> Issuer {
+        SourcedPbgid::issuer(self)
+    }
     fn pbgid(&self) -> Option<u32> {
         Some(SourcedPbgid::pbgid(self))
     }
@@ -138,6 +156,9 @@ impl CommandPayload for SourcePbgid {
     }
     fn index(&self) -> u32 {
         SourcePbgid::index(self)
+    }
+    fn issuer(&self) -> Issuer {
+        SourcePbgid::issuer(self)
     }
     fn pbgid(&self) -> Option<u32> {
         Some(SourcePbgid::pbgid(self))
@@ -157,6 +178,9 @@ impl CommandPayload for Sourced {
     fn index(&self) -> u32 {
         Sourced::index(self)
     }
+    fn issuer(&self) -> Issuer {
+        Sourced::issuer(self)
+    }
     fn source(&self) -> Option<&Source> {
         Some(Sourced::source(self))
     }
@@ -172,6 +196,9 @@ impl CommandPayload for SourcedIndex {
     fn index(&self) -> u32 {
         SourcedIndex::index(self)
     }
+    fn issuer(&self) -> Issuer {
+        SourcedIndex::issuer(self)
+    }
 }
 
 impl CommandPayload for Ability {
@@ -183,6 +210,9 @@ impl CommandPayload for Ability {
     }
     fn index(&self) -> u32 {
         Ability::index(self)
+    }
+    fn issuer(&self) -> Issuer {
+        Ability::issuer(self)
     }
     fn pbgid(&self) -> Option<u32> {
         Ability::pbgid(self)
@@ -202,6 +232,9 @@ impl CommandPayload for SourcedAbility {
     fn index(&self) -> u32 {
         SourcedAbility::index(self)
     }
+    fn issuer(&self) -> Issuer {
+        SourcedAbility::issuer(self)
+    }
     fn pbgid(&self) -> Option<u32> {
         SourcedAbility::pbgid(self)
     }
@@ -216,6 +249,9 @@ impl CommandPayload for Construction {
     }
     fn index(&self) -> u32 {
         Construction::index(self)
+    }
+    fn issuer(&self) -> Issuer {
+        Construction::issuer(self)
     }
     fn pbgid(&self) -> Option<u32> {
         Some(Construction::pbgid(self))
@@ -232,6 +268,9 @@ impl CommandPayload for ResourceBonus {
     fn index(&self) -> u32 {
         ResourceBonus::index(self)
     }
+    fn issuer(&self) -> Issuer {
+        ResourceBonus::issuer(self)
+    }
 }
 
 impl CommandPayload for BroadcastMessage {
@@ -243,5 +282,8 @@ impl CommandPayload for BroadcastMessage {
     }
     fn index(&self) -> u32 {
         BroadcastMessage::index(self)
+    }
+    fn issuer(&self) -> Issuer {
+        BroadcastMessage::issuer(self)
     }
 }

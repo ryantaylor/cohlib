@@ -1,3 +1,4 @@
+use crate::command_data::Issuer;
 use crate::command_data::Source;
 use crate::command_type::CommandType;
 use crate::data::ticks::value::Blueprint;
@@ -14,6 +15,7 @@ pub struct SourcePbgid {
     action_type: CommandType,
     tick: u32,
     index: u32,
+    issuer: Issuer,
     source: Source,
     pbgid: u32,
     mod_uuid: Option<Uuid>,
@@ -24,6 +26,7 @@ impl SourcePbgid {
         action_type: CommandType,
         tick: u32,
         index: u32,
+        issuer: Issuer,
         source: Source,
         blueprint: Blueprint,
     ) -> Self {
@@ -31,6 +34,7 @@ impl SourcePbgid {
             action_type,
             tick,
             index,
+            issuer,
             source,
             pbgid: blueprint.pbgid,
             mod_uuid: blueprint.mod_uuid,
@@ -54,6 +58,10 @@ impl SourcePbgid {
     /// determine how many commands that player issued in a given game.
     pub fn index(&self) -> u32 {
         self.index
+    }
+    /// Who issued this command.
+    pub fn issuer(&self) -> Issuer {
+        self.issuer
     }
     /// Who or what issued this command.
     pub fn source(&self) -> &Source {

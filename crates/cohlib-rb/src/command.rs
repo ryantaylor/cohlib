@@ -4,7 +4,7 @@
 //! payload-shape dispatch — is delegated to `cohlib`, where it's covered by the fixture
 //! corpus in `crates/cohlib/tests/`. This module only assembles `RHash`es.
 
-use cohlib::{Command, CommandPayloadRef, Orientation, Position, Source};
+use cohlib::{Command, CommandPayloadRef, Issuer, Orientation, Position, Source};
 use magnus::{RHash, Ruby};
 
 pub(crate) fn variant_name(rb_self: &Command) -> String {
@@ -80,6 +80,14 @@ pub(crate) fn to_h(ruby: &Ruby, rb_self: &Command) -> RHash {
     .unwrap();
     hash.aset(ruby.to_symbol("tick"), rb_self.tick()).unwrap();
     hash.aset(ruby.to_symbol("index"), rb_self.index()).unwrap();
+    let (issuer, ai_takeover_tick) = match rb_self.issuer() {
+        Issuer::Human => ("human", None),
+        Issuer::Ai { takeover_tick } => ("ai", takeover_tick),
+        Issuer::Engine => ("engine", None),
+    };
+    hash.aset(ruby.to_symbol("issuer"), issuer).unwrap();
+    hash.aset(ruby.to_symbol("ai_takeover_tick"), ai_takeover_tick)
+        .unwrap();
 
     // Thirteen arms, not thirty-seven: `Command::payload` discriminates by payload shape,
     // and the two type tags above already carry the semantic variant.
