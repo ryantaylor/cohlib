@@ -2,7 +2,7 @@
 
 use crate::{
     command_data::{
-        Ability, BroadcastMessage, CommandPayload, Construction, Empty, Orientation, Pbgid,
+        Ability, BroadcastMessage, CommandPayload, Construction, Empty, Issuer, Orientation, Pbgid,
         Position, ResourceBonus, Source, SourcePbgid, Sourced, SourcedAbility, SourcedIndex,
         SourcedPbgid, Targeted, Unknown,
     },
@@ -242,6 +242,11 @@ impl Command {
         self.common().pbgid()
     }
 
+    /// Whether the player, the AI or the game itself issued the command.
+    pub fn issuer(&self) -> Issuer {
+        self.common().issuer()
+    }
+
     /// Who issued the command, for the payload shapes that model it as a full
     /// [`Source`]. `None` for shapes that carry only a bare `source_identifier`.
     pub fn source(&self) -> Option<&Source> {
@@ -253,10 +258,13 @@ impl Command {
     pub(crate) fn from_data_command_at_tick(command: ticks::Command, tick: u32) -> Self {
         let action_type = command.action_type;
         let index = command.index;
+        let issuer = command
+            .issuer
+            .expect("camera commands have no issuer and aren't player commands");
         match command.data {
             ticks::CommandData::Empty => match action_type {
                 CommandType::PCMD_AIPlayer => {
-                    Self::AITakeover(Empty::new(action_type, tick, index))
+                    Self::AITakeover(Empty::new(action_type, tick, index, issuer))
                 }
                 _ => panic!(
                     "an empty command isn't being handled here! command type {:?}",
@@ -268,6 +276,7 @@ impl Command {
                     action_type,
                     tick,
                     index,
+                    issuer,
                     blueprint,
                     None,
                     None,
@@ -278,6 +287,7 @@ impl Command {
                     action_type,
                     tick,
                     index,
+                    issuer,
                     blueprint,
                     None,
                     None,
@@ -294,6 +304,7 @@ impl Command {
                     action_type,
                     tick,
                     index,
+                    issuer,
                     blueprint,
                     source_identifier,
                     None,
@@ -305,6 +316,7 @@ impl Command {
                     action_type,
                     tick,
                     index,
+                    issuer,
                     blueprint,
                     source_identifier,
                     None,
@@ -322,6 +334,7 @@ impl Command {
                     action_type,
                     tick,
                     index,
+                    issuer,
                     source,
                 )),
                 _ => panic!(
@@ -342,6 +355,7 @@ impl Command {
                         action_type,
                         tick,
                         index,
+                        issuer,
                         source_identifier,
                         queue_index,
                     ))
@@ -356,6 +370,7 @@ impl Command {
                     action_type,
                     tick,
                     index,
+                    issuer,
                     source,
                     blueprint,
                 )),
@@ -363,6 +378,7 @@ impl Command {
                     action_type,
                     tick,
                     index,
+                    issuer,
                     source,
                     blueprint,
                 )),
@@ -370,7 +386,7 @@ impl Command {
                 // way regardless of whether it was issued by a squad or an entity —
                 // same effect, same variant.
                 CommandType::SCMD_StopAbility | CommandType::CMD_StopAbility => {
-                    Self::StopAbility(SourcePbgid::new(action_type, tick, index, source, blueprint))
+                    Self::StopAbility(SourcePbgid::new(action_type, tick, index, issuer, source, blueprint))
                 }
                 _ => panic!(
                     "a source pbgid command isn't being handled here! command type {:?}",
@@ -383,6 +399,7 @@ impl Command {
                     action_type,
                     tick,
                     index,
+                    issuer,
                     source,
                     position,
                     target_entity,
@@ -434,6 +451,7 @@ impl Command {
                         action_type,
                         tick,
                         index,
+                        issuer,
                         blueprint,
                         position,
                         target_entity,
@@ -459,6 +477,7 @@ impl Command {
                             action_type,
                             tick,
                             index,
+                            issuer,
                             blueprint,
                             source_identifier,
                             position,
@@ -480,6 +499,7 @@ impl Command {
                         action_type,
                         tick,
                         index,
+                        issuer,
                         source,
                         blueprint,
                         position,
@@ -500,6 +520,7 @@ impl Command {
                             action_type,
                             tick,
                             index,
+                            issuer,
                             blueprint,
                             Position::new(position[0], position[1], position[2]),
                             Position::new(snapped[0], snapped[1], snapped[2]),
@@ -522,7 +543,7 @@ impl Command {
             }
             ticks::CommandData::ResourceBonus(entries) => match action_type {
                 CommandType::PCMD_AIPlayer_ResourceBonus => Self::AIResourceBonus(
-                    ResourceBonus::new(action_type, tick, index, entries.into_iter().collect()),
+                    ResourceBonus::new(action_type, tick, index, issuer, entries.into_iter().collect()),
                 ),
                 _ => panic!(
                     "a resource bonus command isn't being handled here! command type {:?}",
@@ -531,7 +552,7 @@ impl Command {
             },
             ticks::CommandData::BroadcastMessage(json) => match action_type {
                 CommandType::PCMD_BroadcastMessage => {
-                    Self::Broadcast(BroadcastMessage::new(action_type, tick, index, json))
+                    Self::Broadcast(BroadcastMessage::new(action_type, tick, index, issuer, json))
                 }
                 _ => panic!(
                     "a broadcast message command isn't being handled here! command type {:?}",
@@ -539,7 +560,7 @@ impl Command {
                 ),
             },
             ticks::CommandData::Unknown => {
-                Self::Unknown(Unknown::new(action_type, tick, index))
+                Self::Unknown(Unknown::new(action_type, tick, index, issuer))
             }
         }
     }
