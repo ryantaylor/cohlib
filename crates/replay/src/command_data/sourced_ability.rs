@@ -1,3 +1,4 @@
+use crate::command_data::Issuer;
 use crate::command_data::{Orientation, Position};
 use crate::command_type::CommandType;
 use crate::data::ticks::value::Blueprint;
@@ -17,6 +18,7 @@ pub struct SourcedAbility {
     action_type: CommandType,
     tick: u32,
     index: u32,
+    issuer: Issuer,
     pbgid: Option<u32>,
     mod_uuid: Option<Uuid>,
     source_identifier: u16,
@@ -32,6 +34,7 @@ impl SourcedAbility {
         action_type: CommandType,
         tick: u32,
         index: u32,
+        issuer: Issuer,
         blueprint: Option<Blueprint>,
         source_identifier: u16,
         position: Option<Position>,
@@ -43,6 +46,7 @@ impl SourcedAbility {
             action_type,
             tick,
             index,
+            issuer,
             pbgid: blueprint.map(|b| b.pbgid),
             mod_uuid: blueprint.and_then(|b| b.mod_uuid),
             source_identifier,
@@ -70,6 +74,10 @@ impl SourcedAbility {
     /// determine how many commands that player issued in a given game.
     pub fn index(&self) -> u32 {
         self.index
+    }
+    /// Who issued this command.
+    pub fn issuer(&self) -> Issuer {
+        self.issuer
     }
     /// Internal ID identifying the ability, if this command carried one — absent when
     /// this command is continuing or updating the target of an already-active ability.

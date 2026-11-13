@@ -1,3 +1,4 @@
+use crate::command_data::Issuer;
 use crate::command_data::{Orientation, Position, Source};
 use crate::command_type::CommandType;
 use serde::{Deserialize, Serialize};
@@ -14,6 +15,7 @@ pub struct Targeted {
     action_type: CommandType,
     tick: u32,
     index: u32,
+    issuer: Issuer,
     source: Source,
     position: Option<Position>,
     target_entity: Option<u32>,
@@ -27,6 +29,7 @@ impl Targeted {
         action_type: CommandType,
         tick: u32,
         index: u32,
+        issuer: Issuer,
         source: Source,
         position: Option<Position>,
         target_entity: Option<u32>,
@@ -37,6 +40,7 @@ impl Targeted {
             action_type,
             tick,
             index,
+            issuer,
             source,
             position,
             target_entity,
@@ -62,6 +66,10 @@ impl Targeted {
     /// determine how many commands that player issued in a given game.
     pub fn index(&self) -> u32 {
         self.index
+    }
+    /// Who issued this command.
+    pub fn issuer(&self) -> Issuer {
+        self.issuer
     }
     /// Who or what issued this command.
     pub fn source(&self) -> &Source {

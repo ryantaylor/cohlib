@@ -1,3 +1,4 @@
+use crate::command_data::Issuer;
 use crate::command_type::CommandType;
 use serde::{Deserialize, Serialize};
 
@@ -8,14 +9,16 @@ pub struct Unknown {
     action_type: CommandType,
     tick: u32,
     index: u32,
+    issuer: Issuer,
 }
 
 impl Unknown {
-    pub(crate) fn new(action_type: CommandType, tick: u32, index: u32) -> Self {
+    pub(crate) fn new(action_type: CommandType, tick: u32, index: u32, issuer: Issuer) -> Self {
         Self {
             action_type,
             tick,
             index,
+            issuer,
         }
     }
 
@@ -38,5 +41,9 @@ impl Unknown {
     /// not triggered by player action will have an index of 0.
     pub fn index(&self) -> u32 {
         self.index
+    }
+    /// Who issued this command.
+    pub fn issuer(&self) -> Issuer {
+        self.issuer
     }
 }

@@ -1,3 +1,4 @@
+use crate::command_data::Issuer;
 use crate::command_type::CommandType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -10,6 +11,7 @@ pub struct ResourceBonus {
     action_type: CommandType,
     tick: u32,
     index: u32,
+    issuer: Issuer,
     values: HashMap<String, f32>,
 }
 
@@ -18,12 +20,14 @@ impl ResourceBonus {
         action_type: CommandType,
         tick: u32,
         index: u32,
+        issuer: Issuer,
         values: HashMap<String, f32>,
     ) -> Self {
         Self {
             action_type,
             tick,
             index,
+            issuer,
             values,
         }
     }
@@ -45,6 +49,10 @@ impl ResourceBonus {
     /// determine how many commands that player issued in a given game.
     pub fn index(&self) -> u32 {
         self.index
+    }
+    /// Who issued this command.
+    pub fn issuer(&self) -> Issuer {
+        self.issuer
     }
     /// The resource bonus multipliers, keyed by resource name.
     pub fn values(&self) -> &HashMap<String, f32> {

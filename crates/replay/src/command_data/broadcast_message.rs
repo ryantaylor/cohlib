@@ -1,3 +1,4 @@
+use crate::command_data::Issuer;
 use crate::command_type::CommandType;
 use serde::{Deserialize, Serialize};
 
@@ -12,15 +13,23 @@ pub struct BroadcastMessage {
     action_type: CommandType,
     tick: u32,
     index: u32,
+    issuer: Issuer,
     json: String,
 }
 
 impl BroadcastMessage {
-    pub(crate) fn new(action_type: CommandType, tick: u32, index: u32, json: String) -> Self {
+    pub(crate) fn new(
+        action_type: CommandType,
+        tick: u32,
+        index: u32,
+        issuer: Issuer,
+        json: String,
+    ) -> Self {
         Self {
             action_type,
             tick,
             index,
+            issuer,
             json,
         }
     }
@@ -42,6 +51,10 @@ impl BroadcastMessage {
     /// determine how many commands that player issued in a given game.
     pub fn index(&self) -> u32 {
         self.index
+    }
+    /// Who issued this command.
+    pub fn issuer(&self) -> Issuer {
+        self.issuer
     }
     /// The raw JSON message text.
     pub fn json(&self) -> &str {

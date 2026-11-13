@@ -6,7 +6,7 @@
 //! that model. It also checks that command types this crate claims to semantically
 //! decode always do so, rather than silently falling back to `Command::Unknown`.
 
-use cohlib::{Command, CommandType, Source};
+use cohlib::{Command, CommandType, Issuer, Source};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -951,4 +951,131 @@ fn corpus_variant_coverage_does_not_regress() {
         "expected these variants to be reachable in the fixture corpus, but they \
          weren't: {missing:?} (reached: {reached:?})"
     );
+}
+
+fn seat_commands(replay: &cohlib::Replay, name: &str) -> Vec<Command> {
+    replay
+        .players()
+        .iter()
+        .find(|player| player.name() == name)
+        .unwrap_or_else(|| panic!("no player named {name}"))
+        .commands()
+}
+
+fn fixture(name: &str) -> cohlib::Replay {
+    parse_fixture(
+        &Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("replays")
+            .join(name),
+    )
+}
+
+/// An AI that held its seat from the start is never human, and an AI that took a seat
+/// over only issues commands from the tick it took over.
+#[test]
+fn ai_issuers_agree_with_their_seats_in_every_fixture() {
+    for path in fixture_paths() {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        for player in parse_fixture(&path).players() {
+            for command in player.commands() {
+                match command.issuer() {
+                    Issuer::Ai {
+                        takeover_tick: None,
+                    } => assert!(!player.human(), "{name}: lobby AI on a human seat"),
+                    Issuer::Ai {
+                        takeover_tick: Some(tick),
+                    } => assert!(command.tick() >= tick, "{name}: AI command before takeover"),
+                    Issuer::Human | Issuer::Engine => {}
+                }
+            }
+        }
+    }
+}
+
+/// A seat the AI takes over mid-match switches from human to AI commands at the
+/// takeover tick, and the other seats stay human.
+#[test]
+fn ai_takeover_switches_the_seat_to_ai_commands() {
+    let replay = fixture("ai_takeover.rec");
+    let takeover = Issuer::Ai {
+        takeover_tick: Some(15_740),
+    };
+    let seat = seat_commands(&replay, "WeliWest");
+    assert!(seat.iter().any(|c| c.issuer() == Issuer::Human));
+    assert!(seat.iter().any(|c| c.issuer() == takeover));
+    for command in &seat {
+        let expected = if command.tick() >= 15_740 {
+            takeover
+        } else {
+            Issuer::Human
+        };
+        assert_eq!(command.issuer(), expected, "tick {}", command.tick());
+    }
+
+    let players = replay.players();
+    let mut others = players
+        .iter()
+        .filter(|player| player.name() != "WeliWest")
+        .flat_map(|player| player.commands());
+    assert!(others.all(|c| c.issuer() == Issuer::Human));
+}
+
+/// The takeover tick comes from before the `PCMD_AIPlayer` command, which can trail the
+/// AI's first commands.
+#[test]
+fn ai_takeover_tick_precedes_the_ai_player_command() {
+    let seat = seat_commands(&fixture("automatch.rec"), "tede00");
+    let ai_player = seat
+        .iter()
+        .find(|c| matches!(c, Command::AITakeover(_)))
+        .expect("an AI takeover");
+    let first_ai = seat
+        .iter()
+        .filter(|c| matches!(c.issuer(), Issuer::Ai { .. }))
+        .min_by_key(|c| c.tick())
+        .expect("an AI command");
+
+    assert_eq!(
+        ai_player.issuer(),
+        Issuer::Ai {
+            takeover_tick: Some(9_319)
+        }
+    );
+    assert!(first_ai.tick() < ai_player.tick());
+}
+
+#[test]
+fn lobby_ai_commands_have_no_takeover_tick() {
+    let replay = fixture("skirmish.rec");
+    let players = replay.players();
+    let cpu = players
+        .iter()
+        .find(|player| !player.human())
+        .expect("a CPU seat");
+    assert!(cpu.commands().iter().all(|c| c.issuer()
+        == Issuer::Ai {
+            takeover_tick: None
+        }));
+}
+
+/// Battlegroups granted on a player's behalf and surrenders after a player leaves are
+/// issued by the engine.
+#[test]
+fn engine_issued_commands_are_marked_as_engine() {
+    let replay = fixture("v50049_engine_granted_battlegroup_upgrades.rec");
+
+    let granted: Vec<Command> = seat_commands(&replay, "서울우유A+")
+        .into_iter()
+        .filter(|c| c.issuer() == Issuer::Engine)
+        .collect();
+    assert_eq!(granted.len(), 45);
+    assert!(granted
+        .iter()
+        .all(|c| matches!(c, Command::SelectBattlegroup(_))));
+
+    let surrender = seat_commands(&replay, "HellCats")
+        .into_iter()
+        .find(|c| matches!(c, Command::Surrender(_)))
+        .expect("a surrender");
+    assert_eq!(surrender.issuer(), Issuer::Engine);
 }

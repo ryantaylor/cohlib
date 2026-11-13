@@ -4,7 +4,7 @@
 //! A command payload is:
 //!
 //! ```text
-//! [20 bytes] opaque fixed header
+//! [20 bytes] fixed header (see `parse_issuer`)
 //! [4+ bytes] source        -- who/what issued the command
 //! [1+ bytes] parameter block (optional; 0xFF means "none")
 //! ```
@@ -20,7 +20,7 @@
 //! degrading to `Command::Unknown`, which is reserved for command types this crate has
 //! not decoded at all.
 
-use crate::command_data::Source;
+use crate::command_data::{Issuer, Source};
 use crate::data::{ParserResult, Span};
 use nom::bytes::complete::take;
 use nom::combinator::{map, peek};
@@ -29,13 +29,31 @@ use nom::number::complete::{be_u32, le_u32, le_u8};
 use nom::sequence::tuple;
 use nom_tracable::tracable_parser;
 
-/// Skips the 20-byte fixed header at the start of a command payload. Its fields aren't
-/// understood beyond being stable across every release build examined; the player who
-/// issued the command is already available from the enclosing `ticks::Command`, so
-/// there's no need to extract a redundant copy from here.
+/// Skips the 20-byte fixed header at the start of a command payload; `parse_issuer`
+/// reads the part of it that's understood.
 #[tracable_parser]
 pub(crate) fn parse_header(input: Span) -> ParserResult<Span> {
     take(20u32)(input)
+}
+
+/// Reads who issued a command from its 20-byte header. Byte 4 is the issuer kind
+/// (`0x02` human, `0x03` AI, `0xFF` the engine) and bytes 16..20 the tick at which the
+/// AI took the seat over, or 0 if it held it from the start. Bytes 8..16 repeat the
+/// seat; the rest aren't understood. Panics on an unrecognized kind, like the other
+/// payload parsers.
+#[tracable_parser]
+pub(crate) fn parse_issuer(input: Span) -> ParserResult<Issuer> {
+    map(
+        tuple((take(4u32), le_u8, take(11u32), le_u32)),
+        |(_, kind, _, takeover_tick)| match kind {
+            0x02 => Issuer::Human,
+            0x03 => Issuer::Ai {
+                takeover_tick: (takeover_tick != 0).then_some(takeover_tick),
+            },
+            0xFF => Issuer::Engine,
+            other => panic!("unrecognized command issuer kind 0x{other:02x}"),
+        },
+    )(input)
 }
 
 /// Wire-level parsing for [`Source`] (the data type itself lives in `command_data`,
