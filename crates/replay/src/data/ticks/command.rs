@@ -383,7 +383,7 @@ impl CommandData {
             }
             CommandType::PCMD_PlaceAndConstructEntities => Self::parse_construction,
             CommandType::CMD_BuildSquad | CommandType::CMD_Upgrade => Self::parse_sourced_pbgid,
-            CommandType::PCMD_Ability => Self::parse_pbgid_targeted,
+            CommandType::PCMD_Ability | CommandType::PCMD_StopAbility => Self::parse_pbgid_targeted,
             CommandType::CMD_Ability => Self::parse_sourced_pbgid_targeted,
             CommandType::SCMD_Ability => Self::parse_ability,
             CommandType::SCMD_StopAbility | CommandType::CMD_StopAbility => {
@@ -397,6 +397,11 @@ impl CommandData {
             CommandType::SCMD_Retreat
             | CommandType::SCMD_Stop
             | CommandType::PCMD_TentativeUpgradeRemoveAll
+            | CommandType::PCMD_TentativeUpgradePurchaseAll
+            | CommandType::CMD_AttackForced
+            | CommandType::SCMD_RevertFieldSupport
+            | CommandType::SCMD_SetupTeamWeapon
+            | CommandType::SCMD_Vault
             | CommandType::SCMD_UnloadSquads
             | CommandType::CMD_UnloadSquads
             | CommandType::PCMD_Surrender
