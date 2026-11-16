@@ -118,10 +118,10 @@ fn inventory_items(ruby: &Ruby, items: &[InventoryItem]) -> RArray {
                 set("slot", item.slot().into_value_with(ruby));
                 set("acquired_at", item.acquired_at().into_value_with(ruby));
                 set("location_id", item.location_id().into_value_with(ruby));
-                set("unknown_1", item.unknown_1().into_value_with(ruby));
-                set("unknown_2", item.unknown_2().into_value_with(ruby));
-                set("unknown_3", item.unknown_3().into_value_with(ruby));
-                set("unknown_4", item.unknown_4().into_value_with(ruby));
+                set("unknown1", item.unknown1().into_value_with(ruby));
+                set("unknown2", item.unknown2().into_value_with(ruby));
+                set("unknown3", item.unknown3().into_value_with(ruby));
+                set("unknown4", item.unknown4().into_value_with(ruby));
                 set("extra", ruby.str_from_slice(item.extra()).as_value());
             }
             InventoryItem::Cpu(item) => set("cpu_item_id", item.id().into_value_with(ruby)),

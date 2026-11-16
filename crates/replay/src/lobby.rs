@@ -27,10 +27,10 @@ pub struct PlayerItem {
     slot: Option<u32>,
     acquired_at: u64,
     location_id: u64,
-    unknown_1: u64,
-    unknown_2: i64,
-    unknown_3: i64,
-    unknown_4: i64,
+    unknown1: u64,
+    unknown2: i64,
+    unknown3: i64,
+    unknown4: i64,
     extra: Vec<u8>,
 }
 
@@ -72,20 +72,20 @@ impl PlayerItem {
         self.location_id
     }
     /// A small counter that mostly grows between a given item's appearances.
-    pub fn unknown_1(&self) -> u64 {
-        self.unknown_1
+    pub fn unknown1(&self) -> u64 {
+        self.unknown1
     }
     /// Always -1 so far.
-    pub fn unknown_2(&self) -> i64 {
-        self.unknown_2
+    pub fn unknown2(&self) -> i64 {
+        self.unknown2
     }
     /// 19 or 51 so far.
-    pub fn unknown_3(&self) -> i64 {
-        self.unknown_3
+    pub fn unknown3(&self) -> i64 {
+        self.unknown3
     }
     /// -1 or `i32::MAX` so far.
-    pub fn unknown_4(&self) -> i64 {
-        self.unknown_4
+    pub fn unknown4(&self) -> i64 {
+        self.unknown4
     }
     /// Record bytes past the known fields; empty unless Relic extends the format.
     pub fn extra(&self) -> &[u8] {
@@ -137,10 +137,10 @@ impl From<&PlayerItemData> for PlayerItem {
             slot: metadata_slot(&item.metadata),
             acquired_at: item.acquired_at,
             location_id: item.location_id,
-            unknown_1: item.unknown_1,
-            unknown_2: item.unknown_2,
-            unknown_3: item.unknown_3,
-            unknown_4: item.unknown_4,
+            unknown1: item.unknown1,
+            unknown2: item.unknown2,
+            unknown3: item.unknown3,
+            unknown4: item.unknown4,
             extra: item.extra.clone(),
         }
     }

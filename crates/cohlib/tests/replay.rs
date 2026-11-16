@@ -494,10 +494,10 @@ fn parse_inventory_items() {
     assert_eq!(item.slot(), Some(4));
     assert_eq!(item.acquired_at(), 1677864554);
     assert_eq!(item.location_id(), 33509267);
-    assert_eq!(item.unknown_1(), 7);
-    assert_eq!(item.unknown_2(), -1);
-    assert_eq!(item.unknown_3(), 19);
-    assert_eq!(item.unknown_4(), i64::from(i32::MAX));
+    assert_eq!(item.unknown1(), 7);
+    assert_eq!(item.unknown2(), -1);
+    assert_eq!(item.unknown3(), 19);
+    assert_eq!(item.unknown4(), i64::from(i32::MAX));
     assert!(item.extra().is_empty());
 
     // Every item belongs to its player and sits in that player's loadout container.

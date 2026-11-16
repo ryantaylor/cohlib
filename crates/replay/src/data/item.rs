@@ -18,7 +18,7 @@ pub enum Item {
 #[derive(Debug, Clone)]
 pub struct PlayerItem {
     pub instance_id: u64,
-    pub unknown_1: u64,
+    pub unknown1: u64,
     pub definition_id: u64,
     pub profile_id: u64,
     pub durability: u64,
@@ -26,9 +26,9 @@ pub struct PlayerItem {
     pub metadata: String,
     pub acquired_at: u64,
     pub location_id: u64,
-    pub unknown_2: i64,
-    pub unknown_3: i64,
-    pub unknown_4: i64,
+    pub unknown2: i64,
+    pub unknown3: i64,
+    pub unknown4: i64,
     /// Payload bytes past the known fields; empty in every replay seen so far.
     pub extra: Vec<u8>,
 }
@@ -64,13 +64,13 @@ impl Item {
                 rest,
             )),
             |(
-                (instance_id, unknown_1, definition_id, profile_id, durability, durability_type),
+                (instance_id, unknown1, definition_id, profile_id, durability, durability_type),
                 (_, metadata),
-                (acquired_at, location_id, unknown_2, unknown_3, unknown_4),
+                (acquired_at, location_id, unknown2, unknown3, unknown4),
                 extra,
             ): (_, _, _, Span)| PlayerItem {
                 instance_id,
-                unknown_1,
+                unknown1,
                 definition_id,
                 profile_id,
                 durability,
@@ -78,9 +78,9 @@ impl Item {
                 metadata,
                 acquired_at,
                 location_id,
-                unknown_2,
-                unknown_3,
-                unknown_4,
+                unknown2,
+                unknown3,
+                unknown4,
                 extra: extra.to_vec(),
             },
         )(input)
