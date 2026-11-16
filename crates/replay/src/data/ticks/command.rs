@@ -1,5 +1,5 @@
 use crate::{
-    command_data::Source,
+    command_data::{Issuer, Source},
     command_type::CommandType,
     data::ticks::payload::{self, ParamBlock},
     data::ticks::value::{Blueprint, TargetValues, Value},
@@ -7,7 +7,7 @@ use crate::{
 };
 use nom::{
     bytes::complete::take,
-    combinator::{flat_map, map, peek, rest},
+    combinator::{cond, flat_map, map, peek, rest},
     multi::{length_count, length_data, length_value},
     number::complete::{be_u32, le_f32, le_i16, le_u16, le_u32, le_u8},
     sequence::{preceded, tuple},
@@ -496,6 +496,8 @@ pub struct Command {
     pub action_type: CommandType,
     pub player_id: u8,
     pub index: u32,
+    /// `None` for the camera commands, whose payloads have no issuer header.
+    pub issuer: Option<Issuer>,
     pub data: CommandData,
 }
 
@@ -514,14 +516,27 @@ impl Command {
     fn parse_type(action_type: CommandType) -> impl FnMut(Span) -> ParserResult<Command> {
         move |input: Span| {
             map(
-                tuple((le_u8, le_u32, CommandData::parser_for_type(action_type))),
-                |(player_id, index, data)| Command {
+                tuple((
+                    le_u8,
+                    le_u32,
+                    cond(!is_camera(action_type), peek(payload::parse_issuer)),
+                    CommandData::parser_for_type(action_type),
+                )),
+                |(player_id, index, issuer, data)| Command {
                     action_type,
                     player_id: player_id & 0b0111_1111, // bit mask to turn eg 0x87 into 0x7
                     index,
+                    issuer,
                     data,
                 },
             )(input)
         }
     }
+}
+
+fn is_camera(action_type: CommandType) -> bool {
+    matches!(
+        action_type,
+        CommandType::DCMD_CameraTrack | CommandType::DCMD_COUNT
+    )
 }

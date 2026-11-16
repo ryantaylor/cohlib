@@ -1,3 +1,4 @@
+use crate::command_data::Issuer;
 use crate::command_type::CommandType;
 use serde::{Deserialize, Serialize};
 
@@ -8,6 +9,7 @@ pub struct SourcedIndex {
     action_type: CommandType,
     tick: u32,
     index: u32,
+    issuer: Issuer,
     source_identifier: u16,
     queue_index: u32,
 }
@@ -17,6 +19,7 @@ impl SourcedIndex {
         action_type: CommandType,
         tick: u32,
         index: u32,
+        issuer: Issuer,
         source_identifier: u16,
         queue_index: u32,
     ) -> Self {
@@ -24,6 +27,7 @@ impl SourcedIndex {
             action_type,
             tick,
             index,
+            issuer,
             source_identifier,
             queue_index,
         }
@@ -46,6 +50,10 @@ impl SourcedIndex {
     /// determine how many commands that player issued in a given game.
     pub fn index(&self) -> u32 {
         self.index
+    }
+    /// Who issued this command.
+    pub fn issuer(&self) -> Issuer {
+        self.issuer
     }
     /// This value corresponds to the internal identifier given by the game engine to the entity
     /// that is the source of the command. If you know the identifier for a given entity, you can

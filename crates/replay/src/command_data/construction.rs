@@ -1,3 +1,4 @@
+use crate::command_data::Issuer;
 use crate::command_data::Position;
 use crate::command_type::CommandType;
 use crate::data::ticks::value::Blueprint;
@@ -18,6 +19,7 @@ pub struct Construction {
     action_type: CommandType,
     tick: u32,
     index: u32,
+    issuer: Issuer,
     pbgid: u32,
     mod_uuid: Option<Uuid>,
     position: Position,
@@ -32,6 +34,7 @@ impl Construction {
         action_type: CommandType,
         tick: u32,
         index: u32,
+        issuer: Issuer,
         blueprint: Blueprint,
         position: Position,
         snapped_position: Position,
@@ -42,6 +45,7 @@ impl Construction {
             action_type,
             tick,
             index,
+            issuer,
             pbgid: blueprint.pbgid,
             mod_uuid: blueprint.mod_uuid,
             position,
@@ -68,6 +72,10 @@ impl Construction {
     /// determine how many commands that player issued in a given game.
     pub fn index(&self) -> u32 {
         self.index
+    }
+    /// Who issued this command.
+    pub fn issuer(&self) -> Issuer {
+        self.issuer
     }
     /// Internal ID that uniquely identifies entity associated with the command. This value can be
     /// matched to CoH3 attribute files in order to determine the entity in question. Note that,
