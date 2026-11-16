@@ -3,6 +3,7 @@
 use crate::command::Command;
 use crate::command_data::{CameraCounts, CameraTrack};
 use crate::data::Player as PlayerData;
+use crate::lobby::InventoryItem;
 use crate::map::StartingPosition;
 use crate::message::Message;
 use serde::{Deserialize, Serialize};
@@ -36,6 +37,8 @@ pub struct Player {
     camera_tracks: Vec<CameraTrack>,
     camera_counts: Vec<CameraCounts>,
     starting_position: Option<StartingPosition>,
+    battlegroup_items: Vec<InventoryItem>,
+    cosmetic_items: Vec<InventoryItem>,
 }
 
 // Every accessor below that returns an owned Vec (commands, camera_tracks, ...) clones this
@@ -56,6 +59,12 @@ impl magnus::DataTypeFunctions for Player {
             + self.commands.capacity() * std::mem::size_of::<Command>()
             + self.camera_tracks.capacity() * std::mem::size_of::<CameraTrack>()
             + self.camera_counts.capacity() * std::mem::size_of::<CameraCounts>()
+            + self
+                .battlegroup_items
+                .iter()
+                .chain(&self.cosmetic_items)
+                .map(|item| std::mem::size_of::<InventoryItem>() + item.raw().len())
+                .sum::<usize>()
     }
 }
 
@@ -184,6 +193,18 @@ impl Player {
     pub fn starting_position(&self) -> Option<&StartingPosition> {
         self.starting_position.as_ref()
     }
+
+    /// The battlegroups the player brought into the match (usually three), in the order the
+    /// replay stores them. `Player::battlegroup` is the one they picked.
+    pub fn battlegroup_items(&self) -> &[InventoryItem] {
+        &self.battlegroup_items
+    }
+
+    /// The cosmetic items the player had equipped, in the order the replay stores them. Empty for
+    /// AI players.
+    pub fn cosmetic_items(&self) -> &[InventoryItem] {
+        &self.cosmetic_items
+    }
 }
 
 /// Whether a command is the player's own battlegroup pick.
@@ -231,6 +252,16 @@ pub(crate) fn player_from_data(
             .iter()
             .find(|position| position.index() == player_data.id)
             .cloned(),
+        battlegroup_items: player_data
+            .battlegroup_items
+            .iter()
+            .map(InventoryItem::from)
+            .collect(),
+        cosmetic_items: player_data
+            .cosmetic_items
+            .iter()
+            .map(InventoryItem::from)
+            .collect(),
     };
 
     if player.human {

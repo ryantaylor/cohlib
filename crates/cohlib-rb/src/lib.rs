@@ -7,9 +7,9 @@ mod camera;
 mod command;
 
 use cohlib::{
-    extract_build_order, parse_replay, BuildAction, BuildActionKind, BuildOrder, Command, MapPoint,
-    MapSize, Message, Player, Rect, Replay, Scenario, ScenarioPoint, Sector, Semver,
-    StartingPosition, VersionedStore,
+    extract_build_order, parse_replay, BuildAction, BuildActionKind, BuildOrder, Command,
+    InventoryItem, MapPoint, MapSize, Message, Player, Rect, Replay, Scenario, ScenarioPoint,
+    Sector, Semver, StartingPosition, VersionedStore,
 };
 use magnus::{function, method, prelude::*, Error, RArray, RHash, Ruby};
 
@@ -27,6 +27,18 @@ fn replay_mod_uuid(rb_self: &Replay) -> String {
 
 fn replay_from_bytes(ruby: &Ruby, bytes: Vec<u8>) -> Result<Replay, Error> {
     parse_replay(&bytes).map_err(|e| Error::new(ruby.exception_runtime_error(), e.to_string()))
+}
+
+// [[name, value], ...] in file order; names can repeat, so not a Hash.
+fn replay_lobby_options(ruby: &Ruby, rb_self: &Replay) -> RArray {
+    let arr = ruby.ary_new_capa(rb_self.lobby_options().len());
+    for option in rb_self.lobby_options() {
+        let pair = ruby.ary_new_capa(2);
+        pair.push(option.name()).unwrap();
+        pair.push(option.value()).unwrap();
+        arr.push(pair).unwrap();
+    }
+    arr
 }
 
 fn replay_players(ruby: &Ruby, rb_self: &Replay) -> RArray {
@@ -83,6 +95,28 @@ fn player_team(rb_self: &Player) -> usize {
 
 fn player_starting_position(rb_self: &Player) -> Option<StartingPosition> {
     rb_self.starting_position().cloned()
+}
+
+// { definition_id:, raw: } hashes; raw is a binary (ASCII-8BIT) String.
+fn inventory_items(ruby: &Ruby, items: &[InventoryItem]) -> RArray {
+    let arr = ruby.ary_new_capa(items.len());
+    for item in items {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.to_symbol("definition_id"), item.definition_id())
+            .unwrap();
+        hash.aset(ruby.to_symbol("raw"), ruby.str_from_slice(item.raw()))
+            .unwrap();
+        arr.push(hash).unwrap();
+    }
+    arr
+}
+
+fn player_battlegroup_items(ruby: &Ruby, rb_self: &Player) -> RArray {
+    inventory_items(ruby, rb_self.battlegroup_items())
+}
+
+fn player_cosmetic_items(ruby: &Ruby, rb_self: &Player) -> RArray {
+    inventory_items(ruby, rb_self.cosmetic_items())
 }
 
 fn wrap_commands(ruby: &Ruby, commands: Vec<Command>) -> RArray {
@@ -415,6 +449,8 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     replay_class.define_method("game_type", method!(replay_game_type, 0))?;
     replay_class.define_method("matchhistory_id", method!(Replay::matchhistory_id, 0))?;
     replay_class.define_method("mod_uuid", method!(replay_mod_uuid, 0))?;
+    replay_class.define_method("mod_version", method!(Replay::mod_version, 0))?;
+    replay_class.define_method("lobby_options", method!(replay_lobby_options, 0))?;
     replay_class.define_method("map_filename", method!(Replay::map_filename, 0))?;
     replay_class.define_method(
         "map_localized_name_id",
@@ -453,6 +489,8 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
         "battlegroup_commands",
         method!(player_battlegroup_commands, 0),
     )?;
+    player_class.define_method("battlegroup_items", method!(player_battlegroup_items, 0))?;
+    player_class.define_method("cosmetic_items", method!(player_cosmetic_items, 0))?;
     player_class.define_method("camera_tracks", method!(camera::tracks, 0))?;
     player_class.define_method("camera_counts", method!(camera::counts, 0))?;
 

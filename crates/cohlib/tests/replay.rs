@@ -451,3 +451,122 @@ fn parse_battlegroup_ignores_engine_granted_upgrades() {
     assert_eq!(replay.players()[1].battlegroup_selected_at(), Some(60));
     assert_eq!(replay.players()[2].battlegroup(), None);
 }
+
+#[test]
+fn parse_inventory_items() {
+    let data = include_bytes!("../replays/automatch.rec");
+    let replay = Replay::from_bytes(data).unwrap();
+    let players = replay.players();
+
+    assert_eq!(
+        players
+            .iter()
+            .map(|player| player
+                .battlegroup_items()
+                .iter()
+                .map(|item| item.definition_id())
+                .collect::<Vec<_>>())
+            .collect::<Vec<_>>(),
+        vec![
+            vec![Some(453294), Some(453390), Some(453430)],
+            vec![Some(453171), Some(453172), Some(453175)]
+        ]
+    );
+    assert_eq!(
+        players
+            .iter()
+            .map(|player| player.cosmetic_items().len())
+            .collect::<Vec<_>>(),
+        vec![25, 19]
+    );
+    assert_eq!(players[0].cosmetic_items()[0].definition_id(), Some(454134));
+
+    // Whole record: tagged prefix (kind 04 battlegroup, 05 cosmetic), length-prefixed payload, suffix.
+    for (items, kind) in [
+        (players[0].battlegroup_items(), 0x04),
+        (players[0].cosmetic_items(), 0x05),
+    ] {
+        for item in items {
+            let raw = item.raw();
+            let payload_len = u32::from_le_bytes(raw[24..28].try_into().unwrap()) as usize;
+            assert_eq!(raw[0..3], [0x0a, 0x01, kind]);
+            assert_eq!(raw.len(), 24 + 4 + payload_len + 4);
+        }
+    }
+}
+
+#[test]
+fn parse_inventory_items_ai() {
+    let data = include_bytes!("../replays/unusual_cpu_items.rec");
+    let replay = Replay::from_bytes(data).unwrap();
+    let ai = &replay.players()[1];
+
+    assert!(!ai.human());
+    assert_eq!(ai.battlegroup_items().len(), 3);
+    assert!(ai.cosmetic_items().is_empty());
+    for item in ai.battlegroup_items() {
+        assert_eq!(item.definition_id(), None);
+        assert_eq!(item.raw().len(), 12);
+        assert_eq!(item.raw()[0..4], [0x07, 0x02, 0x04, 0x01]);
+    }
+}
+
+#[test]
+fn parse_inventory_items_none() {
+    let data = include_bytes!("../replays/zero_items.rec");
+    let replay = Replay::from_bytes(data).unwrap();
+    let player = &replay.players()[0];
+
+    assert!(player.battlegroup_items().is_empty());
+    assert!(player.cosmetic_items().is_empty());
+}
+
+#[test]
+fn parse_lobby_options() {
+    let data = include_bytes!("../replays/automatch.rec");
+    let replay = Replay::from_bytes(data).unwrap();
+
+    assert_eq!(
+        replay
+            .lobby_options()
+            .iter()
+            .map(|option| (option.name(), option.value()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("section_starting_resources", 1),
+            ("option_resources", 0),
+            ("section_tickets", 1),
+            ("option_tickets", 500)
+        ]
+    );
+}
+
+#[test]
+fn parse_lobby_options_repeated_names() {
+    let data = include_bytes!("../replays/unusual_cpu_items.rec");
+    let replay = Replay::from_bytes(data).unwrap();
+
+    assert_eq!(
+        replay
+            .lobby_options()
+            .iter()
+            .take(4)
+            .map(|option| (option.name(), option.value()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("bridge_modifier", 1),
+            ("bridge_modifier", 0),
+            ("ceasefire", 1),
+            ("ceasefire", 0)
+        ]
+    );
+}
+
+#[test]
+fn parse_mod_version() {
+    let automatch = Replay::from_bytes(include_bytes!("../replays/automatch.rec")).unwrap();
+    let modded = Replay::from_bytes(include_bytes!("../replays/vs_ai.rec")).unwrap();
+
+    assert_eq!(automatch.mod_version(), Some(3318379781));
+    assert_eq!(modded.mod_version(), Some(1111669793));
+}

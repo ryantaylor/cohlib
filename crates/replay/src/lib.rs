@@ -6,6 +6,7 @@ pub mod command_data;
 mod command_type;
 mod data;
 mod errors;
+mod lobby;
 mod map;
 mod message;
 mod parsed;
@@ -16,6 +17,7 @@ pub use error::Error;
 
 pub use command::{Command, CommandPayloadRef};
 pub use command_type::CommandType;
+pub use lobby::{InventoryItem, LobbyOption};
 pub use map::{Map, MapPoint, StartingPosition};
 pub use message::Message;
 pub use parsed::{GameType, Replay};

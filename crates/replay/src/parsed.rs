@@ -3,6 +3,7 @@
 use crate::data::chunks::DataAutoChunk;
 use crate::data::{Replay as ReplayData, Span};
 use crate::errors::ParseError;
+use crate::lobby::LobbyOption;
 use crate::map::{map_from_data, Map, MapPoint, StartingPosition};
 use crate::player::{player_from_data, Player};
 use nom_locate::LocatedSpan;
@@ -28,6 +29,8 @@ pub struct Replay {
     game_type: GameType,
     matchhistory_id: Option<u64>,
     mod_uuid: Uuid,
+    mod_version: Option<u64>,
+    lobby_options: Vec<LobbyOption>,
     map: Map,
     players: Vec<Player>,
     length: usize,
@@ -44,6 +47,11 @@ impl magnus::DataTypeFunctions for Replay {
 
         std::mem::size_of::<Self>()
             + self.timestamp.capacity()
+            + self
+                .lobby_options
+                .iter()
+                .map(|option| std::mem::size_of::<LobbyOption>() + option.name().len())
+                .sum::<usize>()
             + self
                 .players
                 .iter()
@@ -106,6 +114,16 @@ impl Replay {
     pub fn mod_uuid(&self) -> Uuid {
         self.mod_uuid
     }
+    /// The number after the `:` in the replay's mod string. Constant for the base game across
+    /// builds, so it is not a game version; its meaning is unconfirmed. `None` if it is not a
+    /// number.
+    pub fn mod_version(&self) -> Option<u64> {
+        self.mod_version
+    }
+    /// The lobby's settings, in the order the replay stores them. See `LobbyOption`.
+    pub fn lobby_options(&self) -> &[LobbyOption] {
+        &self.lobby_options
+    }
     /// Map information for this match.
     pub fn map(&self) -> Map {
         self.map.clone()
@@ -162,6 +180,13 @@ fn replay_from_data(data: &ReplayData) -> Replay {
         game_type: game_type_from_data(data),
         matchhistory_id: matchhistory_id_from_data(data),
         mod_uuid: data.game_data().mod_uuid,
+        mod_version: data.game_data().mod_version,
+        lobby_options: data
+            .game_data()
+            .options
+            .iter()
+            .map(LobbyOption::from)
+            .collect(),
         length: data.command_ticks().count(),
         players: data
             .game_data()

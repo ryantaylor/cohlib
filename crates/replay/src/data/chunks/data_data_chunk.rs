@@ -1,7 +1,6 @@
 use crate::data::chunks::{Chunk, Chunk::DataData, Header, TrashDataChunk};
 use crate::data::parser::parse_utf8_variable;
 use crate::data::{ParserResult, Player, Span};
-use byteorder::{LittleEndian, ReadBytesExt};
 use nom::bytes::complete::{tag, take, take_while};
 use nom::character::{is_digit, is_hex_digit};
 use nom::combinator::{cut, map, map_parser, peek, verify};
@@ -11,21 +10,19 @@ use nom::sequence::{separated_pair, tuple};
 use nom_tracable::tracable_parser;
 use uuid::Uuid;
 
-#[derive(Debug)]
-pub struct Option {
-    _name: String,
-    _value: u32,
+/// One lobby setting. Lobbies list them in order and may repeat a name.
+#[derive(Debug, Clone)]
+pub struct LobbyOption {
+    pub name: String,
+    pub value: u32,
 }
 
-impl Option {
+impl LobbyOption {
     #[tracable_parser]
-    pub fn parse_option(input: Span) -> ParserResult<Option> {
+    pub fn parse_option(input: Span) -> ParserResult<LobbyOption> {
         map(
             tuple((parse_utf8_variable(le_u32), le_u32)),
-            |((_, name), value)| Option {
-                _name: name,
-                _value: value,
-            },
+            |((_, name), value)| LobbyOption { name, value },
         )(input)
     }
 }
@@ -37,9 +34,10 @@ pub struct DataDataChunk {
     pub players: Vec<Player>,
     pub skirmish: bool,
     pub matchhistory_id: u64,
-    _options: Vec<Option>,
+    pub options: Vec<LobbyOption>,
     pub mod_uuid: Uuid,
-    _unknown_number: u32,
+    /// The number after the `:` in the mod string; meaning unconfirmed.
+    pub mod_version: Option<u64>,
 }
 
 impl DataDataChunk {
@@ -74,7 +72,7 @@ impl DataDataChunk {
                     _,
                     options,
                     _,
-                    (mod_uuid, unknown_number),
+                    (mod_uuid, mod_version),
                 )| {
                     DataData(DataDataChunk {
                         _header: header.clone(),
@@ -82,9 +80,9 @@ impl DataDataChunk {
                         players,
                         skirmish,
                         matchhistory_id,
-                        _options: options,
+                        options,
                         mod_uuid,
-                        _unknown_number: unknown_number,
+                        mod_version,
                     })
                 },
             ),
@@ -101,10 +99,10 @@ impl DataDataChunk {
     }
 
     #[tracable_parser]
-    fn parse_options(input: Span) -> ParserResult<Vec<Option>> {
+    fn parse_options(input: Span) -> ParserResult<Vec<LobbyOption>> {
         map(
             many_till(
-                Option::parse_option,
+                LobbyOption::parse_option,
                 map_parser(
                     peek(take(12u32)),
                     many_m_n(3, 3, verify(le_u32, |n| *n == 0 || *n == 1)),
@@ -120,18 +118,17 @@ impl DataDataChunk {
     }
 
     #[tracable_parser]
-    fn parse_mod_info(input: Span) -> ParserResult<(Uuid, u32)> {
+    fn parse_mod_info(input: Span) -> ParserResult<(Uuid, Option<u64>)> {
         length_value(
             le_u32,
             map(
                 separated_pair(take_while(is_hex_digit), tag(":"), take_while(is_digit)),
-                |(mod_uuid, unknown_number): (Span, Span)| {
+                |(mod_uuid, mod_version): (Span, Span)| {
                     (
                         Uuid::try_parse_ascii(&mod_uuid).unwrap(),
-                        unknown_number
-                            .into_fragment()
-                            .read_u32::<LittleEndian>()
-                            .unwrap(),
+                        std::str::from_utf8(mod_version.fragment())
+                            .ok()
+                            .and_then(|digits| digits.parse().ok()),
                     )
                 },
             ),

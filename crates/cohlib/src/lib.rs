@@ -13,6 +13,6 @@ pub use replay::command_data::{
     SourcedAbility, SourcedIndex, SourcedPbgid, Targeted, Unknown,
 };
 pub use replay::{
-    parse_replay, Command, CommandPayloadRef, CommandType, Faction, GameType, Map, MapPoint,
-    Message, Player, Replay, StartingPosition, Team,
+    parse_replay, Command, CommandPayloadRef, CommandType, Faction, GameType, InventoryItem,
+    LobbyOption, Map, MapPoint, Message, Player, Replay, StartingPosition, Team,
 };

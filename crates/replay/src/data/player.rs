@@ -20,7 +20,8 @@ pub struct Player {
     _ai_type: String,
     pub steam_id: String,
     pub profile_id: u64,
-    _items: Vec<Item>,
+    pub battlegroup_items: Vec<Item>,
+    pub cosmetic_items: Vec<Item>,
 }
 
 impl Player {
@@ -52,12 +53,13 @@ impl Player {
                         _ai_type: ai_type,
                         steam_id,
                         profile_id,
-                        _items: vec![],
+                        battlegroup_items: vec![],
+                        cosmetic_items: vec![],
                     }
                 },
             ))(input)?;
 
-            let (input, items) = Self::parse_items(input, &player)?;
+            let (input, (battlegroup_items, cosmetic_items)) = Self::parse_items(input, &player)?;
 
             // players in this chunk version or later are followed by a count-prefixed list of
             // 6-byte records (seen non-empty for AI-filled slots); usually empty, in which case
@@ -67,7 +69,8 @@ impl Player {
             Ok((
                 input,
                 Player {
-                    _items: items,
+                    battlegroup_items,
+                    cosmetic_items,
                     ..player
                 },
             ))
@@ -113,17 +116,17 @@ impl Player {
     }
 
     #[tracable_parser]
-    fn parse_items<'a>(input: Span<'a>, player: &Player) -> IResult<Span<'a>, Vec<Item>> {
+    fn parse_items<'a>(
+        input: Span<'a>,
+        player: &Player,
+    ) -> IResult<Span<'a>, (Vec<Item>, Vec<Item>)> {
         cut(map(
             tuple((
                 length_count(le_u32, Self::item_parser_for(player)),
                 take(4u32),
                 length_count(le_u32, Self::item_parser_for(player)),
             )),
-            |(mut battlegroup_items, _, mut cosmetic_items)| {
-                battlegroup_items.append(&mut cosmetic_items);
-                battlegroup_items
-            },
+            |(battlegroup_items, _, cosmetic_items)| (battlegroup_items, cosmetic_items),
         ))(input)
     }
 }
