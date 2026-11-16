@@ -1,6 +1,6 @@
 //! Integration tests for the replay module, ported from vault's test suite.
 
-use cohlib::{Command, Faction, GameType, Replay, Team};
+use cohlib::{Command, Faction, GameType, InventoryItem, PlayerItem, Replay, Team};
 use uuid::{uuid, Uuid};
 
 #[test]
@@ -452,6 +452,13 @@ fn parse_battlegroup_ignores_engine_granted_upgrades() {
     assert_eq!(replay.players()[2].battlegroup(), None);
 }
 
+fn player_item(item: &InventoryItem) -> &PlayerItem {
+    match item {
+        InventoryItem::Player(item) => item,
+        InventoryItem::Cpu(item) => panic!("expected a human item, got {item:?}"),
+    }
+}
+
 #[test]
 fn parse_inventory_items() {
     let data = include_bytes!("../replays/automatch.rec");
@@ -464,13 +471,10 @@ fn parse_inventory_items() {
             .map(|player| player
                 .battlegroup_items()
                 .iter()
-                .map(|item| item.definition_id())
+                .map(|item| player_item(item).definition_id())
                 .collect::<Vec<_>>())
             .collect::<Vec<_>>(),
-        vec![
-            vec![Some(453294), Some(453390), Some(453430)],
-            vec![Some(453171), Some(453172), Some(453175)]
-        ]
+        vec![vec![453294, 453390, 453430], vec![453171, 453172, 453175]]
     );
     assert_eq!(
         players
@@ -479,20 +483,59 @@ fn parse_inventory_items() {
             .collect::<Vec<_>>(),
         vec![25, 19]
     );
-    assert_eq!(players[0].cosmetic_items()[0].definition_id(), Some(454134));
 
-    // Whole record: tagged prefix (kind 04 battlegroup, 05 cosmetic), length-prefixed payload, suffix.
-    for (items, kind) in [
-        (players[0].battlegroup_items(), 0x04),
-        (players[0].cosmetic_items(), 0x05),
-    ] {
-        for item in items {
-            let raw = item.raw();
-            let payload_len = u32::from_le_bytes(raw[24..28].try_into().unwrap()) as usize;
-            assert_eq!(raw[0..3], [0x0a, 0x01, kind]);
-            assert_eq!(raw.len(), 24 + 4 + payload_len + 4);
-        }
+    let item = player_item(&players[0].cosmetic_items()[0]);
+    assert_eq!(item.instance_id(), 33509337);
+    assert_eq!(item.definition_id(), 454134);
+    assert_eq!(item.profile_id(), 362985);
+    assert_eq!(item.durability(), 1);
+    assert_eq!(item.durability_type(), 0);
+    assert_eq!(item.metadata(), r#"{"epos":"4","eslot":"4"}"#);
+    assert_eq!(item.slot(), Some(4));
+    assert_eq!(item.acquired_at(), 1677864554);
+    assert_eq!(item.location_id(), 33509267);
+    assert_eq!(item.unknown_1(), 7);
+    assert_eq!(item.unknown_2(), -1);
+    assert_eq!(item.unknown_3(), 19);
+    assert_eq!(item.unknown_4(), i64::from(i32::MAX));
+    assert!(item.extra().is_empty());
+
+    // Every item belongs to its player and sits in that player's loadout container.
+    for player in players {
+        let items: Vec<_> = player
+            .battlegroup_items()
+            .iter()
+            .chain(player.cosmetic_items())
+            .map(player_item)
+            .collect();
+        assert!(items
+            .iter()
+            .all(|item| Some(item.profile_id()) == player.profile_id()
+                && item.location_id() == items[0].location_id()
+                && item.slot().is_some()
+                && item.extra().is_empty()));
     }
+}
+
+#[test]
+fn parse_inventory_items_slot_order() {
+    let data = include_bytes!("../replays/unusual_cpu_items.rec");
+    let replay = Replay::from_bytes(data).unwrap();
+
+    // Items are stored out of slot order, and the metadata can carry more than the slot.
+    let players = replay.players();
+    let items = players[2].battlegroup_items();
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| player_item(item).slot())
+            .collect::<Vec<_>>(),
+        vec![Some(0), Some(2), Some(1)]
+    );
+    assert_eq!(
+        player_item(&items[2]).metadata(),
+        r#"{"att":{"is_new":{"val":"0"}},"epos":"1","eslot":"1","priority":"1"}"#
+    );
 }
 
 #[test]
@@ -502,13 +545,17 @@ fn parse_inventory_items_ai() {
     let ai = &replay.players()[1];
 
     assert!(!ai.human());
-    assert_eq!(ai.battlegroup_items().len(), 3);
     assert!(ai.cosmetic_items().is_empty());
-    for item in ai.battlegroup_items() {
-        assert_eq!(item.definition_id(), None);
-        assert_eq!(item.raw().len(), 12);
-        assert_eq!(item.raw()[0..4], [0x07, 0x02, 0x04, 0x01]);
-    }
+    assert_eq!(
+        ai.battlegroup_items()
+            .iter()
+            .map(|item| match item {
+                InventoryItem::Cpu(item) => item.id(),
+                InventoryItem::Player(item) => panic!("expected an AI item, got {item:?}"),
+            })
+            .collect::<Vec<_>>(),
+        vec![2044465, 2044467, 2044468]
+    );
 }
 
 #[test]

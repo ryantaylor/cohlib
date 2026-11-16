@@ -907,6 +907,7 @@ dependencies = [
  "nom-tracable",
  "nom_locate",
  "serde",
+ "serde_json",
  "thiserror",
  "uuid",
 ]

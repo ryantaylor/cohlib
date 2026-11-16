@@ -63,7 +63,7 @@ impl magnus::DataTypeFunctions for Player {
                 .battlegroup_items
                 .iter()
                 .chain(&self.cosmetic_items)
-                .map(|item| std::mem::size_of::<InventoryItem>() + item.raw().len())
+                .map(|item| std::mem::size_of::<InventoryItem>() + item.heap_size())
                 .sum::<usize>()
     }
 }

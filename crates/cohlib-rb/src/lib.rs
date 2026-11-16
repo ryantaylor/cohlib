@@ -11,7 +11,7 @@ use cohlib::{
     InventoryItem, MapPoint, MapSize, Message, Player, Rect, Replay, Scenario, ScenarioPoint,
     Sector, Semver, StartingPosition, VersionedStore,
 };
-use magnus::{function, method, prelude::*, Error, RArray, RHash, Ruby};
+use magnus::{function, method, prelude::*, Error, IntoValue, RArray, RHash, Ruby, Value};
 
 // ---------------------------------------------------------------------------
 // CohLib::Replay
@@ -97,15 +97,35 @@ fn player_starting_position(rb_self: &Player) -> Option<StartingPosition> {
     rb_self.starting_position().cloned()
 }
 
-// { definition_id:, raw: } hashes; raw is a binary (ASCII-8BIT) String.
+// One hash per item. Human items carry every PlayerItem field (extra as a binary String); AI
+// items carry only cpu_item_id.
 fn inventory_items(ruby: &Ruby, items: &[InventoryItem]) -> RArray {
     let arr = ruby.ary_new_capa(items.len());
     for item in items {
         let hash = ruby.hash_new();
-        hash.aset(ruby.to_symbol("definition_id"), item.definition_id())
-            .unwrap();
-        hash.aset(ruby.to_symbol("raw"), ruby.str_from_slice(item.raw()))
-            .unwrap();
+        let set = |key: &str, value: Value| hash.aset(ruby.to_symbol(key), value).unwrap();
+        match item {
+            InventoryItem::Player(item) => {
+                set("instance_id", item.instance_id().into_value_with(ruby));
+                set("definition_id", item.definition_id().into_value_with(ruby));
+                set("profile_id", item.profile_id().into_value_with(ruby));
+                set("durability", item.durability().into_value_with(ruby));
+                set(
+                    "durability_type",
+                    item.durability_type().into_value_with(ruby),
+                );
+                set("metadata", item.metadata().into_value_with(ruby));
+                set("slot", item.slot().into_value_with(ruby));
+                set("acquired_at", item.acquired_at().into_value_with(ruby));
+                set("location_id", item.location_id().into_value_with(ruby));
+                set("unknown_1", item.unknown_1().into_value_with(ruby));
+                set("unknown_2", item.unknown_2().into_value_with(ruby));
+                set("unknown_3", item.unknown_3().into_value_with(ruby));
+                set("unknown_4", item.unknown_4().into_value_with(ruby));
+                set("extra", ruby.str_from_slice(item.extra()).as_value());
+            }
+            InventoryItem::Cpu(item) => set("cpu_item_id", item.id().into_value_with(ruby)),
+        }
         arr.push(hash).unwrap();
     }
     arr
