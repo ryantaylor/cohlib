@@ -13,7 +13,7 @@ pub mod ticks;
 
 use crate::data::chunky::Chunky;
 use crate::data::header::Header;
-use crate::data::item::Item;
+pub use crate::data::item::{CpuItem, Item, PlayerItem};
 pub use crate::data::player::Player;
 pub use crate::data::replay::Replay;
 
