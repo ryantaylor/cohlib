@@ -21,10 +21,13 @@ const DECODED_TYPES: &[CommandType] = &[
     CommandType::PCMD_DetonateCharges,
     CommandType::PCMD_InstantUpgrade,
     CommandType::PCMD_PlaceAndConstructEntities,
+    CommandType::PCMD_StopAbility,
     CommandType::PCMD_Surrender,
     CommandType::PCMD_TentativeUpgrade,
+    CommandType::PCMD_TentativeUpgradePurchaseAll,
     CommandType::PCMD_TentativeUpgradeRemoveAll,
     CommandType::CMD_Ability,
+    CommandType::CMD_AttackForced,
     CommandType::CMD_AttackFromHold,
     CommandType::CMD_BuildSquad,
     CommandType::CMD_CancelConstruction,
@@ -48,11 +51,14 @@ const DECODED_TYPES: &[CommandType] = &[
     CommandType::SCMD_Recrew,
     CommandType::SCMD_ReinforceUnit,
     CommandType::SCMD_Retreat,
+    CommandType::SCMD_RevertFieldSupport,
+    CommandType::SCMD_SetupTeamWeapon,
     CommandType::SCMD_Stop,
     CommandType::SCMD_StopAbility,
     CommandType::SCMD_Unload,
     CommandType::SCMD_UnloadSquads,
     CommandType::SCMD_Upgrade,
+    CommandType::SCMD_Vault,
 ];
 
 /// Fixtures with pre-existing parse failures unrelated to command parsing (present on
@@ -307,6 +313,120 @@ fn loads_with_a_kind_0x1e_parameter_block_decode_their_target() {
             .all(|data| data.target_entity().is_some() || data.entity().is_some()),
         "expected every load to decode its target"
     );
+}
+
+fn commands_in(fixture: &str) -> Vec<Command> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("replays")
+        .join(fixture);
+    parse_fixture(&path)
+        .players()
+        .iter()
+        .flat_map(|player| player.commands())
+        .collect()
+}
+
+/// `PCMD_TentativeUpgradePurchaseAll` carries the issuing player and no parameters.
+#[test]
+fn purchase_battlegroup_abilities_decodes_with_a_player_source() {
+    let purchases: Vec<_> = commands_in("v48837_force_attack.rec")
+        .into_iter()
+        .filter_map(|command| match command {
+            Command::PurchaseBattlegroupAbilities(data) => Some(data),
+            _ => None,
+        })
+        .collect();
+
+    assert!(!purchases.is_empty(), "expected battlegroup purchases");
+    assert!(purchases
+        .iter()
+        .all(|data| matches!(data.source(), Source::Player(_))
+            && data.position().is_none()
+            && data.target_entity().is_none()));
+}
+
+/// `CMD_AttackForced` is issued by an entity at a squad.
+#[test]
+fn force_attack_decodes_its_source_and_target() {
+    let attacks: Vec<_> = commands_in("v48837_force_attack.rec")
+        .into_iter()
+        .filter_map(|command| match command {
+            Command::ForceAttack(data) => Some(data),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(attacks.len(), 2);
+    assert!(attacks
+        .iter()
+        .all(|data| matches!(data.source(), Source::Entity(_)) && data.entity().is_some()));
+}
+
+/// `SCMD_RevertFieldSupport` is issued by one or more squads at an entity.
+#[test]
+fn revert_field_support_decodes_its_source_and_target() {
+    let reverts: Vec<_> = commands_in("v48837_revert_field_support.rec")
+        .into_iter()
+        .filter_map(|command| match command {
+            Command::RevertFieldSupport(data) => Some(data),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(reverts.len(), 10);
+    assert!(reverts.iter().all(|data| data.target_entity().is_some()));
+    assert!(reverts
+        .iter()
+        .any(|data| matches!(data.source(), Source::Squads(_))));
+}
+
+/// `PCMD_StopAbility` references the stopped ability by blueprint.
+#[test]
+fn stop_battlegroup_ability_decodes_its_blueprint() {
+    let stops: Vec<_> = commands_in("v48837_stop_battlegroup_ability.rec")
+        .into_iter()
+        .filter_map(|command| match command {
+            Command::StopBattlegroupAbility(data) => Some(data),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(stops.len(), 2);
+    assert!(stops.iter().all(|data| data.pbgid() == 2_166_754));
+}
+
+/// `SCMD_SetupTeamWeapon` is issued by a squad at a position.
+#[test]
+fn setup_team_weapon_decodes_its_position() {
+    let setups: Vec<_> = commands_in("v50313_load_targeting_block.rec")
+        .into_iter()
+        .filter_map(|command| match command {
+            Command::SetupTeamWeapon(data) => Some(data),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(setups.len(), 2);
+    assert!(setups
+        .iter()
+        .all(|data| matches!(data.source(), Source::Squad(_)) && data.position().is_some()));
+}
+
+/// `SCMD_Vault` is issued by a squad at a position.
+#[test]
+fn vault_decodes_its_position() {
+    let vaults: Vec<_> = commands_in("squad_vault.rec")
+        .into_iter()
+        .filter_map(|command| match command {
+            Command::Vault(data) => Some(data),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(vaults.len(), 1);
+    assert!(vaults
+        .iter()
+        .all(|data| matches!(data.source(), Source::Squad(_)) && data.position().is_some()));
 }
 
 /// `CMD_CancelConstruction`'s source was assumed scalar until a build 48837 replay
@@ -617,24 +737,35 @@ const VARIANT_WIRE_TYPES: &[(&str, &[CommandType])] = &[
     ),
     ("DetonateCharges", &[CommandType::PCMD_DetonateCharges]),
     ("Face", &[CommandType::SCMD_Face]),
+    ("ForceAttack", &[CommandType::CMD_AttackForced]),
     ("Load", &[CommandType::SCMD_Load]),
     ("Move", &[CommandType::CMD_Move]),
     ("MoveSquad", &[CommandType::SCMD_Move]),
     ("PickUpSimItem", &[CommandType::SCMD_PickUpSimItem]),
+    (
+        "PurchaseBattlegroupAbilities",
+        &[CommandType::PCMD_TentativeUpgradePurchaseAll],
+    ),
     ("Recrew", &[CommandType::SCMD_Recrew]),
     ("Reinforce", &[CommandType::SCMD_ReinforceUnit]),
     ("Retreat", &[CommandType::SCMD_Retreat]),
+    (
+        "RevertFieldSupport",
+        &[CommandType::SCMD_RevertFieldSupport],
+    ),
     ("RallyPoint", &[CommandType::CMD_RallyPoint]),
     ("SelectBattlegroup", &[CommandType::PCMD_InstantUpgrade]),
     (
         "SelectBattlegroupAbility",
         &[CommandType::PCMD_TentativeUpgrade],
     ),
+    ("SetupTeamWeapon", &[CommandType::SCMD_SetupTeamWeapon]),
     ("Stop", &[CommandType::SCMD_Stop]),
     (
         "StopAbility",
         &[CommandType::SCMD_StopAbility, CommandType::CMD_StopAbility],
     ),
+    ("StopBattlegroupAbility", &[CommandType::PCMD_StopAbility]),
     ("Surrender", &[CommandType::PCMD_Surrender]),
     ("Unload", &[CommandType::SCMD_Unload]),
     (
@@ -645,6 +776,7 @@ const VARIANT_WIRE_TYPES: &[(&str, &[CommandType])] = &[
         ],
     ),
     ("UpgradeSquad", &[CommandType::SCMD_Upgrade]),
+    ("Vault", &[CommandType::SCMD_Vault]),
     ("UseAbility", &[CommandType::CMD_Ability]),
     ("UseAbilitySquad", &[CommandType::SCMD_Ability]),
     ("UseBattlegroupAbility", &[CommandType::PCMD_Ability]),
@@ -773,22 +905,28 @@ fn corpus_variant_coverage_does_not_regress() {
         "DeselectAllBattlegroupAbilities",
         "DetonateCharges",
         "Face",
+        "ForceAttack",
         "Load",
         "Move",
         "MoveSquad",
         "PickUpSimItem",
+        "PurchaseBattlegroupAbilities",
         "Recrew",
         "Reinforce",
         "Retreat",
+        "RevertFieldSupport",
         "RallyPoint",
         "SelectBattlegroup",
         "SelectBattlegroupAbility",
+        "SetupTeamWeapon",
         "Stop",
         "StopAbility",
+        "StopBattlegroupAbility",
         "Surrender",
         "Unload",
         "UnloadSquads",
         "UpgradeSquad",
+        "Vault",
         "UseAbility",
         "UseAbilitySquad",
         "UseBattlegroupAbility",

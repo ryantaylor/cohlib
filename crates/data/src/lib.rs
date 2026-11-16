@@ -748,8 +748,8 @@ impl VersionedStore {
             }
         }
         // Walk from idx upward (newer versions).
-        for i in idx..self.versions.len() {
-            if let Some(v) = f(&self.versions[i]) {
+        for g in &self.versions[idx..] {
+            if let Some(v) = f(g) {
                 return Some(v);
             }
         }
@@ -776,8 +776,8 @@ impl VersionedStore {
             }
         }
         // Walk from idx upward (newer versions).
-        for i in idx..self.versions.len() {
-            if let Some(v) = f(&self.versions[i]) {
+        for g in &self.versions[idx..] {
+            if let Some(v) = f(g) {
                 if v.loc_id() == 0 {
                     continue;
                 }
@@ -803,8 +803,8 @@ impl VersionedStore {
                 return Some(v);
             }
         }
-        for i in idx..self.versions.len() {
-            if let Some(v) = f(&self.versions[i]) {
+        for g in &self.versions[idx..] {
+            if let Some(v) = f(g) {
                 if v.icon_name().is_empty() {
                     continue;
                 }
